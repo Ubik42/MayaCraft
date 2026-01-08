@@ -115,3 +115,36 @@ def import_raw_skeleton(skeleton_name: str):
         print("导入完成。")
     except Exception as e:
         cmds.warning(f"导入文件时发生错误: {e}")
+
+
+def clear_all_joint_labels():
+    """
+    遍历场景中所有骨骼，关闭并清除标签属性。
+    """
+    all_joints = cmds.ls(type="joint")
+
+    if not all_joints:
+        cmds.warning("场景中没有骨骼。")
+        return
+
+    count = 0
+    for jnt in all_joints:
+        try:
+            # 1. 关闭显示
+            if cmds.getAttr(f"{jnt}.drawLabel"):
+                cmds.setAttr(f"{jnt}.drawLabel", 0)
+
+            # 2. 重置类型为 None (0)
+            if cmds.getAttr(f"{jnt}.type") != 0:
+                cmds.setAttr(f"{jnt}.type", 0)
+
+            # 3. 清空文字内容
+            current_text = cmds.getAttr(f"{jnt}.otherType")
+            if current_text:
+                cmds.setAttr(f"{jnt}.otherType", "", type="string")
+
+            count += 1
+        except Exception as e:
+            print(f"Error clearing label for {jnt}: {e}")
+
+    print(f"已清理 {count} 个骨骼的标签信息。")

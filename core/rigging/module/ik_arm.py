@@ -1,7 +1,7 @@
 # core/rigging/module/ik_arm.py
 # -*- coding: utf-8 -*-
 from .base import BaseRigModule
-from core.rigging import ikfk
+from ..basic import ikfk
 import maya.cmds as cmds
 
 

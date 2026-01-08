@@ -12,7 +12,7 @@ import maya.cmds as cmds
 from typing import Optional, List, Tuple
 
 # 导入核心模块
-from core.rigging import ik, fk
+from core.rigging.basic import fk, ik
 from core import controller
 
 

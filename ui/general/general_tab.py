@@ -1,10 +1,10 @@
+# ui/general/general_tab.py
 # -*- coding: utf-8 -*-
 """
 general_tab_ui.py
 通用功能标签页的前端UI实现。
-此类负责构建和显示界面，并将用户交互传递给后端逻辑。
 """
-
+from PySide6 import QtWidgets
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,
     QListWidget, QGroupBox, QComboBox, QSlider, QLabel, QCheckBox,
@@ -43,11 +43,22 @@ class GeneralTab(QWidget):
         self.source_lw.setSelectionMode(QListWidget.NoSelection)
         self.align_btn = QPushButton("定位")
 
-        # --- 控制器 ---
-        self.controller_group = QGroupBox("控制器")
-        self.controller_combo = QComboBox()
-        self.controller_combo.addItems(self.logic.CONTROLLER_SHAPES.keys())
-        self.controller_replace_btn = QPushButton("替换选中")
+        # --- [修改] 命名工具 ---
+        self.rename_group = QGroupBox("命名工具 (Rename Tools)")
+
+        # 前后缀
+        self.prefix_le = QLineEdit()
+        self.prefix_le.setPlaceholderText("前缀 (Prefix)")
+        self.suffix_le = QLineEdit()
+        self.suffix_le.setPlaceholderText("后缀 (Suffix)")
+        self.apply_affix_btn = QPushButton("批量添加前后缀 (Apply)")
+
+        # 查找替换
+        self.search_le = QLineEdit()
+        self.search_le.setPlaceholderText("查找内容 (Search)")
+        self.replace_le = QLineEdit()
+        self.replace_le.setPlaceholderText("替换为 (Replace)")
+        self.replace_btn = QPushButton("批量替换 (Replace)")
 
         # --- 变换工具 ---
         self.transform_group = QGroupBox("变换工具")
@@ -86,12 +97,30 @@ class GeneralTab(QWidget):
         align_layout.addWidget(self.align_btn)
         self.align_group.setLayout(align_layout)
 
-        # --- 控制器布局 ---
-        controller_layout = QHBoxLayout()
-        controller_layout.addWidget(QLabel("选择形状:"))
-        controller_layout.addWidget(self.controller_combo)
-        controller_layout.addWidget(self.controller_replace_btn)
-        self.controller_group.setLayout(controller_layout)
+        # --- [修改] 命名工具布局 ---
+        rename_layout = QVBoxLayout()
+
+        # 前后缀行
+        affix_layout = QHBoxLayout()
+        affix_layout.addWidget(self.prefix_le)
+        affix_layout.addWidget(self.suffix_le)
+        rename_layout.addLayout(affix_layout)
+        rename_layout.addWidget(self.apply_affix_btn)
+
+        # 添加分隔线 (可选)
+        separator = QtWidgets.QFrame()
+        separator.setFrameShape(QtWidgets.QFrame.HLine)
+        separator.setFrameShadow(QtWidgets.QFrame.Sunken)
+        rename_layout.addWidget(separator)
+
+        # 查找替换行
+        replace_layout = QHBoxLayout()
+        replace_layout.addWidget(self.search_le)
+        replace_layout.addWidget(self.replace_le)
+        rename_layout.addLayout(replace_layout)
+        rename_layout.addWidget(self.replace_btn)
+
+        self.rename_group.setLayout(rename_layout)
 
         # --- 变换工具布局 ---
         transform_layout = QVBoxLayout()
@@ -116,91 +145,75 @@ class GeneralTab(QWidget):
 
         # --- 添加所有组到主布局 ---
         main_layout.addWidget(self.align_group)
-        main_layout.addWidget(self.controller_group)
+        main_layout.addWidget(self.rename_group)  # [修改] 添加新组
         main_layout.addWidget(self.transform_group)
         main_layout.addWidget(self.joint_display_group)
         main_layout.addStretch()
 
     def _connect_signals(self):
         """连接所有控件的信号到槽函数。"""
+        # 定位
         self.target_get_btn.clicked.connect(self._on_get_target)
         self.source_get_btn.clicked.connect(self._on_get_sources)
         self.align_btn.clicked.connect(self._on_align)
 
-        self.controller_replace_btn.clicked.connect(self._on_replace_controller)
+        # [修改] 命名
+        self.apply_affix_btn.clicked.connect(self._on_apply_affix)
+        self.replace_btn.clicked.connect(self._on_replace_name)
 
+        # 变换
         self.freeze_to_group_btn.clicked.connect(self.logic.freeze_transform_to_parent_group)
         self.quick_align_btn.clicked.connect(self._on_quick_align)
 
+        # 骨骼显示
         self.joint_size_slider.valueChanged.connect(self._on_joint_size_changed)
         self.joint_axis_cb.stateChanged.connect(self._on_joint_axis_toggled)
         self.create_joint_btn.clicked.connect(self._on_create_joint_at_center)
 
     # --- 槽函数 (Slot Functions) ---
     def _on_get_target(self):
-        """当“获取目标”按钮被点击时。"""
         target_name = self.logic.get_first_selected()
         self.target_le.setText(target_name)
 
     def _on_get_sources(self):
-        """当“获取源”按钮被点击时。"""
         source_names = self.logic.get_all_selected()
         self.source_lw.clear()
         for name in source_names:
             self.source_lw.addItem(QListWidgetItem(name))
 
     def _on_align(self):
-        """当“定位”按钮被点击时。"""
         target = self.target_le.text()
         sources = [self.source_lw.item(i).text() for i in range(self.source_lw.count())]
         self.logic.align_transform(target, sources)
 
-    def _on_replace_controller(self):
-        """当“替换选中”按钮被点击时。"""
-        shape_type = self.controller_combo.currentText()
-        self.logic.replace_selected_controllers(shape_type)
+    def _on_apply_affix(self):
+        """[新增] 响应“添加前后缀”按钮"""
+        prefix = self.prefix_le.text()
+        suffix = self.suffix_le.text()
+        self.logic.add_prefix_suffix_to_selection(prefix, suffix)
+
+    def _on_replace_name(self):
+        """[新增] 响应“替换名称”按钮"""
+        search_str = self.search_le.text()
+        replace_str = self.replace_le.text()
+        self.logic.search_replace_selection_names(search_str, replace_str)
 
     def _on_quick_align(self):
-        """当“快速对齐”按钮被点击时。"""
         do_translate = self.quick_align_translate_cb.isChecked()
         do_rotate = self.quick_align_rotate_cb.isChecked()
         do_scale = self.quick_align_scale_cb.isChecked()
         self.logic.quick_align(do_translate, do_rotate, do_scale)
 
     def _on_joint_size_changed(self, value):
-        """当骨骼大小滑块值改变时。"""
         radius = value / 100.0
         self.joint_size_label.setText(f"{radius:.2f}")
         self.logic.set_all_joint_radius(radius)
 
     def _on_joint_axis_toggled(self, state):
-        """当“显示局部坐标轴”复选框状态改变时。"""
         self.logic.toggle_joint_axis_display(bool(state))
 
     def _on_create_joint_at_center(self):
-        """当“根据几何生成骨骼”按钮被点击时。"""
-        # 调用逻辑层的方法
         if hasattr(self.logic, 'create_joint_at_selection_center'):
             self.logic.create_joint_at_selection_center()
         else:
             print("Error: 逻辑层缺少 create_joint_at_selection_center 方法")
-
-
-# --- 用于在Maya中独立启动和测试的函数 ---
-def show_ui():
-    """在Maya中显示UI窗口。"""
-    try:
-        # 尝试关闭已存在的窗口
-        global general_tab_window
-        general_tab_window.close()
-    except:
-        pass
-
-    general_tab_window = GeneralTab()
-    general_tab_window.show()
-    return general_tab_window
-
-
-# 如果直接运行此文件，则显示UI
-if __name__ == "__main__":
-    show_ui()

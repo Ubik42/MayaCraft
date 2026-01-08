@@ -1,4 +1,4 @@
-# core/rigging/module/base.py
+# core/rigging/module/basic.py
 # -*- coding: utf-8 -*-
 import maya.cmds as cmds
 

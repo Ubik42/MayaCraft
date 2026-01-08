@@ -222,3 +222,74 @@ def create_joint_at_selection_center():
 
     except Exception as e:
         cmds.error(f"创建中心骨骼失败: {e}")
+
+
+def add_prefix_suffix_to_selection(prefix: str, suffix: str):
+    """
+    为当前选中的所有对象批量添加前缀和后缀。
+
+    Args:
+        prefix (str): 要添加的前缀。
+        suffix (str): 要添加的后缀。
+    """
+    selection = cmds.ls(selection=True)
+    if not selection:
+        cmds.warning("没有选中任何对象。")
+        return
+
+    # 倒序处理，防止在层级中重命名父级后子级路径失效
+    # 虽然 ls -sl 返回的通常是无序的，但重命名时倒序更安全
+    selection.sort(key=lambda x: x.count('|'), reverse=True)
+
+    for node in selection:
+        # 获取短名
+        short_name = node.split('|')[-1]
+
+        # 构建新名字
+        new_name = f"{prefix}{short_name}{suffix}"
+
+        # 只有当名字确实改变时才执行重命名
+        if new_name != short_name:
+            try:
+                cmds.rename(node, new_name)
+            except Exception as e:
+                cmds.warning(f"无法重命名 '{short_name}' 为 '{new_name}': {e}")
+
+    print(f"已处理 {len(selection)} 个对象的命名。")
+
+
+def search_replace_selection_names(search_str: str, replace_str: str):
+    """
+    为当前选中的所有对象批量查找并替换名称中的字符串。
+
+    Args:
+        search_str (str): 要查找的字符串。
+        replace_str (str): 用于替换的字符串。
+    """
+    selection = cmds.ls(selection=True)
+    if not selection:
+        cmds.warning("没有选中任何对象。")
+        return
+
+    if not search_str:
+        cmds.warning("“查找内容”不能为空。")
+        return
+
+    selection.sort(key=lambda x: x.count('|'), reverse=True)
+
+    count = 0
+    for node in selection:
+        short_name = node.split('|')[-1]
+
+        # 检查名字中是否包含要查找的字符串
+        if search_str in short_name:
+            new_name = short_name.replace(search_str, replace_str)
+
+            if new_name != short_name:
+                try:
+                    cmds.rename(node, new_name)
+                    count += 1
+                except Exception as e:
+                    cmds.warning(f"无法重命名 '{short_name}' 为 '{new_name}': {e}")
+
+    print(f"已成功替换 {count} 个对象的名称。")

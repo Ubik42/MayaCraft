@@ -29,7 +29,7 @@ ATTR_LIST = [
 
 
 class SlotButton(QtWidgets.QPushButton):
-    """自定义插槽按钮"""
+    """自定义插槽按钮 (回退到无编号版本)"""
 
     def __init__(self, label_name, is_attribute=False, parent=None):
         super().__init__(parent)
@@ -126,14 +126,14 @@ class BuildWidget(CollapsibleWidget):
         self.btn_clear.setMinimumHeight(30)
         self.btn_clear.setStyleSheet("background-color: #EF5350; font-weight: bold; color: white;")
 
-        # [新增] 刷新按钮
+        # 刷新按钮
         self.btn_refresh = QtWidgets.QPushButton("刷新检测 (Refresh)")
         self.btn_refresh.setMinimumHeight(30)
         self.btn_refresh.setStyleSheet("background-color: #42A5F5; font-weight: bold; color: white;")
 
         action_layout.addWidget(self.btn_assign)
         action_layout.addWidget(self.btn_clear)
-        action_layout.addWidget(self.btn_refresh)  # 添加到布局
+        action_layout.addWidget(self.btn_refresh)
 
         layout.addLayout(action_layout)
 
@@ -175,7 +175,7 @@ class BuildWidget(CollapsibleWidget):
         # 信号连接
         self.btn_assign.clicked.connect(self._on_assign_clicked)
         self.btn_clear.clicked.connect(self._on_clear_clicked)
-        self.btn_refresh.clicked.connect(self._sync_from_scene)  # [新增] 连接刷新信号
+        self.btn_refresh.clicked.connect(self._sync_from_scene)
         self.run_build_btn.clicked.connect(self._on_run_build)
 
     def _create_tree_widget(self):
@@ -268,77 +268,46 @@ class BuildWidget(CollapsibleWidget):
         if btn_obj.assigned_node and cmds.objExists(btn_obj.assigned_node):
             cmds.select(btn_obj.assigned_node, replace=True)
 
-    # --- 数据收集与传递 ---
-
     def collect_ui_data(self):
         """遍历 UI 树，收集配置"""
         config_data = {}
-
-        # 只遍历骨骼标签树
         root = self.label_tree.invisibleRootItem()
         for i in range(root.childCount()):
             group_item = root.child(i)
             group_conf = group_item.data(0, QtCore.Qt.UserRole)
-
-            # [安全校验]
             if not group_conf or "name" not in group_conf:
                 continue
-
             module_name = group_conf["name"]
-
             module_instances = []
             for j in range(group_item.childCount()):
                 row_item = group_item.child(j)
                 buttons = row_item.data(0, QtCore.Qt.UserRole)
-
                 row_mapping = {}
                 is_valid_row = False
-
                 if buttons:
                     for btn in buttons:
                         if btn.assigned_node and cmds.objExists(btn.assigned_node):
                             row_mapping[btn.label_name] = btn.assigned_node
                             is_valid_row = True
-
                 if is_valid_row:
                     module_instances.append(row_mapping)
-
             if module_instances:
                 config_data[module_name] = module_instances
-
         return config_data
 
     def _on_run_build(self):
-        """执行构建"""
+        """执行构建 (已移除强制检查和面板弹出逻辑)"""
         # 1. 收集当前 UI 面板上的数据
         ui_data = self.collect_ui_data()
 
-        final_data = ui_data
-
-        # 2. 如果 UI 是空的，询问是否执行自动扫描
-        if not ui_data:
-            result = QtWidgets.QMessageBox.question(
-                self,
-                "自动扫描模式",
-                "检测到 UI 面板未填入数据。\n\n是否使用后台自动扫描 (Auto-Scan) 模式进行绑定？\n(程序将自动根据场景中的标签进行匹配)",
-                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
-            )
-            if result == QtWidgets.QMessageBox.No:
-                return
-
-            # 传入 None，告诉 build.py 使用自动扫描
-            final_data = None
-
-            # 3. 发送给后台
+        # 2. 直接发送给后台执行，即使 ui_data 为空 {}
         try:
-            build.run_build_test(final_data)
+            build.run_build_test(ui_data)
             print("Build Test 执行完毕。")
         except Exception as e:
             import traceback
             traceback.print_exc()
             cmds.error(f"Build Test 错误: {e}")
-
-    # --- 场景同步 ---
 
     def _sync_from_scene(self):
         """手动刷新场景数据"""
@@ -358,7 +327,6 @@ class BuildWidget(CollapsibleWidget):
             config = group_item.data(0, QtCore.Qt.UserRole)
             if config:
                 slots = config["slots"]
-
                 max_rows = 0
                 for s_name in slots:
                     found_items = data_source.get(s_name, [])
@@ -370,7 +338,6 @@ class BuildWidget(CollapsibleWidget):
                 for r in range(max_rows):
                     row_item = self._add_row(tree, group_item, slots, config["is_attr"])
                     slot_buttons = row_item.data(0, QtCore.Qt.UserRole)
-
                     for btn in slot_buttons:
                         key = btn.label_name
                         nodes = data_source.get(key, [])
@@ -385,22 +352,19 @@ class BuildWidget(CollapsibleWidget):
         selection = cmds.ls(sl=True)
         if not selection:
             return
-
         key = self.current_active_slot.label_name
         node = selection[0]
-
         if self.current_active_slot.is_attribute:
             logic.add_attribute_to_node(node, key)
         else:
             logic.set_joint_label(node, key)
-
         self._sync_from_scene()
 
     def _on_clear_clicked(self):
-        if not self.current_active_slot: return
+        if not self.current_active_slot:
+            return
         node = self.current_active_slot.assigned_node
         key = self.current_active_slot.label_name
-
         if node:
             if self.current_active_slot.is_attribute:
                 logic.remove_attribute_from_node(node, key)

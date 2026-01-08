@@ -11,6 +11,7 @@ FK 控制器模块。
 
 import maya.cmds as cmds
 from typing import Optional, List
+from core import tool # [新增]
 
 
 class FkCtl(object):
@@ -71,12 +72,10 @@ def add_fk(
         pass
 
     # 5. 锁定属性 (只留旋转)
-    for attr in ['tx', 'ty', 'tz', 'sx', 'sy', 'sz', 'v']:
-        cmds.setAttr(f"{ctrl}.{attr}", lock=True, keyable=False, channelBox=False)
+    tool.lock_transform(ctrl, translate=True, scale=True, visibility=True, rotate=False)
 
     # 6. 强制解锁骨骼并创建约束
-    for axis in ['x', 'y', 'z']:
-        cmds.setAttr(f"{target_bone}.rotate{axis.upper()}", lock=False)
+    tool.unlock_transform(target_bone, rotate=True, translate=False, scale=False, visibility=False)
 
     constraint_node = None
     try:

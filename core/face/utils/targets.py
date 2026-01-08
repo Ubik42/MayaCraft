@@ -44,8 +44,8 @@ def split_lip_targets():
         i = 0
         for ud in ["Up", "Dn"]:
             for rl in ["Rt", "Lf"]:
-                # for ud_w, rl_w, base, offset in zip(ue_data[ud], ue_data[rl], base_points, offsets):
-                #     print base + offset
+                # for ud_w, rl_w, basic, offset in zip(ue_data[ud], ue_data[rl], base_points, offsets):
+                #     print basic + offset
                 points = [base + offset * ud_w * rl_w
                           for ud_w, rl_w, base, offset in zip(ue_data[ud], ue_data[rl], base_points, offsets)]
                 polygons[i].getShape().setPoints(points, space="world")

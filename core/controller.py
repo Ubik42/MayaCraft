@@ -30,9 +30,42 @@ def get_shape_dir():
 
 
 # ==========================================
-# 2. 核心逻辑 (提取与替换)
+# 2. 前端手动调用的功能
 # ==========================================
 
+def save_curve(filename=None):
+    """保存选中控制器的形状"""
+    selection = cmds.ls(selection=True)
+    if not selection:
+        cmds.warning("请先选择一个控制器！")
+        return False
+    target_node = selection[0]
+    data = get_shape_data(target_node)
+    if not data:
+        cmds.warning("选中的物体没有 NURBS 曲线 Shape。")
+        return False
+    save_dir = get_shape_dir()
+    if not save_dir: return False
+
+    if not filename or filename.strip() == "":
+        short_name = target_node.split("|")[-1]
+        safe_name = short_name.replace(":", "_")
+        filename = f"{safe_name}.json"
+    else:
+        if not filename.endswith(".json"): filename += ".json"
+
+    file_path = os.path.join(save_dir, filename)
+    try:
+        with open(file_path, 'w') as f:
+            json.dump(data, f, indent=4)
+        print(f"成功保存: {file_path}")
+        return True
+    except Exception as e:
+        cmds.error(f"保存失败: {e}")
+        return False
+# ==========================================
+# 3. 库管理 (Import Library)
+# ==========================================
 def get_shape_data(node):
     if not cmds.objExists(node): return None
     shapes = cmds.listRelatives(node, shapes=True, fullPath=True) or []
@@ -59,12 +92,94 @@ def get_shape_data(node):
         shapes_data.append(shape_info)
     return shapes_data
 
+def import_all_to_grid():
+    """
+    【新功能】一键导入所有控制器到场景。
+    1. 创建 Shapes 组。
+    2. 读取文件夹内所有 JSON。
+    3. 创建新物体并应用形状。
+    4. 按网格排列。
+    """
+    directory = get_shape_dir()
+    if not directory or not os.path.exists(directory):
+        cmds.warning("形状库目录不存在。")
+        return 0
+
+    files = [f for f in os.listdir(directory) if f.endswith(".json")]
+    if not files:
+        cmds.warning("形状库为空。")
+        return 0
+
+    files.sort()
+
+    # 1. 准备组
+    root_grp = "Shapes"
+    if not cmds.objExists(root_grp):
+        cmds.createNode("transform", name=root_grp)
+
+    count = 0
+
+    # 2. 网格排布参数
+    columns = 10  # 每行放10个
+    spacing = 15  # 间距 (根据控制器大小调整)
+
+    for i, f in enumerate(files):
+        # 名字处理
+        name_base = f.replace(".json", "")
+
+        file_path = os.path.join(directory, f)
+
+        try:
+            with open(file_path, 'r') as json_file:
+                shape_data = json.load(json_file)
+
+            # 3. 创建新物体
+            # 使用 createNode 自动处理重名 (Maya 会自动加数字后缀)
+            new_ctrl = cmds.createNode("transform", name=name_base, parent=root_grp)
+
+            # 4. 赋予形状
+            replace_shape(new_ctrl, shape_data)
+
+            # 5. 排布位置 (X, Z 平面)
+            row = i // columns
+            col = i % columns
+
+            x_pos = col * spacing
+            z_pos = row * spacing
+
+            cmds.xform(new_ctrl, translation=(x_pos, 0, z_pos))
+
+            count += 1
+
+        except Exception as e:
+            print(f"导入 {name_base} 失败: {e}")
+
+    # 选中组，方便用户查看
+    cmds.select(root_grp)
+    return count
+
+def set_color(rgb_color):
+    """设置 RGB 颜色"""
+    selection = cmds.ls(selection=True)
+    if not selection: return 0
+    for node in selection:
+        shapes = cmds.listRelatives(node, shapes=True, fullPath=True) or []
+        nodes_to_color = [node] + shapes
+        for item in nodes_to_color:
+            try:
+                cmds.setAttr(f"{item}.overrideEnabled", 1)
+                cmds.setAttr(f"{item}.overrideRGBColors", 1)
+                cmds.setAttr(f"{item}.overrideColorRGB", rgb_color[0], rgb_color[1], rgb_color[2])
+            except:
+                pass
+    return len(selection)
+
 
 # ==========================================
-# [新增] 供外部模块调用的高层接口
+# 重点
 # ==========================================
 
-
+#输入文件名，这个是主要的外部调用方法
 def apply_stored_shape(target_node, shape_name):
     """
     高层接口：从库中查找并应用形状。
@@ -89,6 +204,8 @@ def apply_stored_shape(target_node, shape_name):
             pass
 
     return False
+
+#输入具体的形状数据
 def replace_shape(target_node, shape_data_list):
     """
     将 target_node 的形状替换为数据中的形状。
@@ -158,121 +275,3 @@ def replace_shape(target_node, shape_data_list):
                     pass
 
 
-def save_curve(filename=None):
-    """保存选中控制器的形状"""
-    selection = cmds.ls(selection=True)
-    if not selection:
-        cmds.warning("请先选择一个控制器！")
-        return False
-    target_node = selection[0]
-    data = get_shape_data(target_node)
-    if not data:
-        cmds.warning("选中的物体没有 NURBS 曲线 Shape。")
-        return False
-    save_dir = get_shape_dir()
-    if not save_dir: return False
-
-    if not filename or filename.strip() == "":
-        short_name = target_node.split("|")[-1]
-        safe_name = short_name.replace(":", "_")
-        filename = f"{safe_name}.json"
-    else:
-        if not filename.endswith(".json"): filename += ".json"
-
-    file_path = os.path.join(save_dir, filename)
-    try:
-        with open(file_path, 'w') as f:
-            json.dump(data, f, indent=4)
-        print(f"成功保存: {file_path}")
-        return True
-    except Exception as e:
-        cmds.error(f"保存失败: {e}")
-        return False
-
-
-# ==========================================
-# 3. 库管理 (Import Library)
-# ==========================================
-
-def import_all_to_grid():
-    """
-    【新功能】一键导入所有控制器到场景。
-    1. 创建 Shapes 组。
-    2. 读取文件夹内所有 JSON。
-    3. 创建新物体并应用形状。
-    4. 按网格排列。
-    """
-    directory = get_shape_dir()
-    if not directory or not os.path.exists(directory):
-        cmds.warning("形状库目录不存在。")
-        return 0
-
-    files = [f for f in os.listdir(directory) if f.endswith(".json")]
-    if not files:
-        cmds.warning("形状库为空。")
-        return 0
-
-    files.sort()
-
-    # 1. 准备组
-    root_grp = "Shapes"
-    if not cmds.objExists(root_grp):
-        cmds.createNode("transform", name=root_grp)
-
-    count = 0
-
-    # 2. 网格排布参数
-    columns = 10  # 每行放10个
-    spacing = 15  # 间距 (根据控制器大小调整)
-
-    for i, f in enumerate(files):
-        # 名字处理
-        name_base = f.replace(".json", "")
-
-        file_path = os.path.join(directory, f)
-
-        try:
-            with open(file_path, 'r') as json_file:
-                shape_data = json.load(json_file)
-
-            # 3. 创建新物体
-            # 使用 createNode 自动处理重名 (Maya 会自动加数字后缀)
-            new_ctrl = cmds.createNode("transform", name=name_base, parent=root_grp)
-
-            # 4. 赋予形状
-            replace_shape(new_ctrl, shape_data)
-
-            # 5. 排布位置 (X, Z 平面)
-            row = i // columns
-            col = i % columns
-
-            x_pos = col * spacing
-            z_pos = row * spacing
-
-            cmds.xform(new_ctrl, translation=(x_pos, 0, z_pos))
-
-            count += 1
-
-        except Exception as e:
-            print(f"导入 {name_base} 失败: {e}")
-
-    # 选中组，方便用户查看
-    cmds.select(root_grp)
-    return count
-
-
-def set_color(rgb_color):
-    """设置 RGB 颜色"""
-    selection = cmds.ls(selection=True)
-    if not selection: return 0
-    for node in selection:
-        shapes = cmds.listRelatives(node, shapes=True, fullPath=True) or []
-        nodes_to_color = [node] + shapes
-        for item in nodes_to_color:
-            try:
-                cmds.setAttr(f"{item}.overrideEnabled", 1)
-                cmds.setAttr(f"{item}.overrideRGBColors", 1)
-                cmds.setAttr(f"{item}.overrideColorRGB", rgb_color[0], rgb_color[1], rgb_color[2])
-            except:
-                pass
-    return len(selection)
