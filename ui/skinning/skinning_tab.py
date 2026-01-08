@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 
 from PySide6 import QtWidgets, QtCore
+from core.logic.skinning import skinning_tab_logic as logic
 
-
-# from .widgets.file_path import_widget FilePathWidget # <-- 暂时不导入自定义控件
 
 class SkinningTab(QtWidgets.QWidget):
     """
@@ -136,27 +135,27 @@ class SkinningTab(QtWidgets.QWidget):
 
     def _on_export_weights(self):
         weight_path = self.weight_path_line_edit.text()  # <-- 从QLineEdit获取路径
-        print(f"UI请求: 导出权重到 -> {weight_path}")
+        logic.export_weights(weight_path)
 
     def _on_import_weights(self):
         weight_path = self.weight_path_line_edit.text()  # <-- 从QLineEdit获取路径
         mode = "position" if self.import_by_position_radio.isChecked() else "index"
-        print(f"UI请求: 从 <- {weight_path} 导入权重 (模式: {mode})")
+        logic.import_weights(weight_path)
 
     def _on_copy_weights(self):
-        print("UI请求: 复制权重")
+        logic.copy_weights()
 
     def _on_paste_weights(self):
-        print("UI请求: 粘贴权重")
+        logic.paste_weights()
 
     def _on_mirror_weights(self):
-        print("UI请求: 镜像权重")
+        logic.mirror_weights()
 
     def _on_smooth_weights(self):
-        print("UI请求: 平滑权重")
+        logic.smooth_weights()
 
     def _on_prune_weights(self):
-        print("UI请求: 删减小权重值")
+        logic.prune_weights()
 
     def _on_remove_unused(self):
-        print("UI请求: 移除未使用骨骼")
+        logic.remove_unused_influences()

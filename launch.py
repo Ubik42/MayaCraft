@@ -1,53 +1,60 @@
 # -*- coding: utf-8 -*-
 import sys
-from PySide6 import QtWidgets
-import maya.mel as mel
 from importlib import reload
+import maya.cmds as cmds
+import maya.OpenMayaUI as omui
+import shiboken6
+from PySide6 import QtWidgets
 
-# --- 1. 路径设置 (不再需要！) ---
-# 解释：因为 shelf 按钮的代码里已经执行了 sys.path.insert，
-# 所以当代码运行到这里时，Python 已经知道项目在哪里了。
-
-# --- 2. 导入我们的重载处理器 ---
-# 建议加上 try-except 以防万一路径没配好时的报错提示
-try:
-    from utils import reload_handler
-    reload(reload_handler)
-except ImportError:
-    print("❌ 错误: 无法导入 utils 包。请检查 sys.path 是否包含项目根目录。")
-    raise
-
-# --- 3. 根据需要清理场景 ---
-# mel.eval('file -new -force') # 开发时可以开着，发布时建议注释掉，以免误删用户文件
-
-# --- 4. 正常导入模块 ---
-from core import name
-from core.rigging import bone, fk, ik, ikfk, stretchy, build_plan,build
 from ui import main_window
 
-# --- 5. 重载 (开发神器) ---
+# --- 重载逻辑 (保持不变) ---
+from utils import reload_handler
+
+reload(reload_handler)
 PACKAGES_TO_RELOAD = ["core", "ui", "utils"]
 for pkg_name in PACKAGES_TO_RELOAD:
-    reload_handler.reload_package(pkg_name)
+    if pkg_name in sys.modules:
+        reload_handler.reload_package(pkg_name)
 
 
-# 测试
-build.run_build_test()
+# --- 运行入口 ---
+def run():
+    workspace_control_name = "MayaCraftWorkspaceControl"
+
+    # 1. 彻底清除旧的
+    if cmds.workspaceControl(workspace_control_name, exists=True):
+        cmds.deleteUI(workspace_control_name)
+
+    # 2. 创建 Maya 面板
+    cmds.workspaceControl(workspace_control_name,
+                          label="MayaCraft",
+                          uiScript="pass",
+                          retain=False,
+                          floating=True)
+
+    # 3. 获取指针并转换
+    ptr = omui.MQtUtil.findControl(workspace_control_name)
+    maya_dock_widget = shiboken6.wrapInstance(int(ptr), QtWidgets.QWidget)
+
+    # 4. 获取或创建布局
+    if maya_dock_widget.layout() is None:
+        layout = QtWidgets.QVBoxLayout(maya_dock_widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+    else:
+        layout = maya_dock_widget.layout()
+
+    # 5. 实例化你的窗口 (现在它是 QWidget，非常安全)
+    app = main_window.MayaCraftMainWindow(parent=maya_dock_widget)
+
+    # 6. 添加进布局
+    layout.addWidget(app)
+
+    # 7. 只要父级显示了，子级默认也会显示，但显式调用一下更保险
+    app.show()
+
+    return app
 
 
-# --- 6. 主函数 ---
-# def run():
-#     # 检查并关闭旧窗口
-#     for widget in QtWidgets.QApplication.instance().topLevelWidgets():
-#         if widget.objectName() == main_window.MayaCraftMainWindow.OBJECT_NAME:
-#             print(f"关闭旧窗口: {widget.objectName()}")
-#             widget.close()
-#
-#     # 显示新窗口
-#     app = main_window.MayaCraftMainWindow.show_instance()
-#     return app
-#
-# # 注意：launch.py 主要是被 import 调用的。
-# # 如果你还是习惯直接在编辑器里 Run 这个文件，可以保留下面这行：
-# if __name__ == "__main__":
-#     run()
+if __name__ == "__main__":
+    run()

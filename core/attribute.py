@@ -91,3 +91,55 @@ def set_draw(
                     cmds.setAttr(f"{shape}.overrideColorRGB", *color)
                 else:
                     cmds.warning(f"Invalid color format for '{node}'. Use an int or a 3-value tuple/list.")
+
+
+def unlock_transform(
+        target_nodes: Union[str, List[str]],
+        translate: bool = True,
+        rotate: bool = True,
+        scale: bool = True,
+        visibility: bool = True,
+        keyable: bool = True
+) -> None:
+    """
+    解锁指定节点的变换属性 (T/R/S/V)。
+
+    Args:
+        target_nodes: 节点名称或列表。
+        translate: 是否解锁位移 (tx, ty, tz)。
+        rotate: 是否解锁旋转 (rx, ry, rz)。
+        scale: 是否解锁缩放 (sx, sy, sz)。
+        visibility: 是否解锁可见性 (v)。
+        keyable: 解锁后是否同时设为 Keyable (在通道栏显示)。默认为 True。
+    """
+    if isinstance(target_nodes, str):
+        target_nodes = [target_nodes]
+
+    # 构建需要处理的属性列表
+    attrs_to_process = []
+    if translate:
+        attrs_to_process.extend(['tx', 'ty', 'tz'])
+    if rotate:
+        attrs_to_process.extend(['rx', 'ry', 'rz'])
+    if scale:
+        attrs_to_process.extend(['sx', 'sy', 'sz'])
+    if visibility:
+        attrs_to_process.append('v')
+
+    for node in target_nodes:
+        if not cmds.objExists(node):
+            continue
+
+        for attr in attrs_to_process:
+            full_attr = f"{node}.{attr}"
+            try:
+                # 1. 解锁
+                cmds.setAttr(full_attr, lock=False)
+
+                # 2. 恢复 Keyable (可选，通常解锁就是为了能K帧)
+                if keyable:
+                    cmds.setAttr(full_attr, keyable=True, channelBox=True)
+
+            except Exception as e:
+                # 某些属性如果被连接可能会报错，或者属性不存在
+                print(f"Warning: Could not unlock {full_attr}: {e}")

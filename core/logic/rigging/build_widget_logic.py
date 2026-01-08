@@ -1,135 +1,131 @@
-# build_widget_logic.py
+# core/logic/rigging/build_widget_logic.py
 # -*- coding: utf-8 -*-
-"""
-build_widget_logic.py
-“骨骼与模块”功能块的后端逻辑。
-"""
-
 import maya.cmds as cmds
-from typing import Dict
+from typing import Dict, List
 
 
-def get_all_joint_labels() -> Dict[str, str]:
+# -----------------------------------------------------------------------------
+# 骨骼标签逻辑
+# -----------------------------------------------------------------------------
+
+def set_joint_label(joint_name: str, new_label: str) -> bool:
+    """设置骨骼标签"""
+    if not cmds.objExists(joint_name) or cmds.nodeType(joint_name) != 'joint':
+        if not new_label: return True
+        cmds.warning(f"'{joint_name}' 不是骨骼。")
+        return False
+
+    if not new_label:
+        # 清除
+        cmds.setAttr(f"{joint_name}.drawLabel", 0)
+        cmds.setAttr(f"{joint_name}.type", 0)
+        cmds.setAttr(f"{joint_name}.otherType", "", type="string")
+        return True
+
+    try:
+        cmds.setAttr(f"{joint_name}.type", 18)  # Other
+        cmds.setAttr(f"{joint_name}.otherType", new_label, type="string")
+        cmds.setAttr(f"{joint_name}.drawLabel", 1)
+        print(f"[Logic] 骨骼标签设定: {joint_name} -> {new_label}")
+        return True
+    except Exception as e:
+        cmds.error(f"标签设置失败: {e}")
+        return False
+
+
+def get_all_joint_labels() -> Dict[str, List[str]]:
     """
-    扫描场景，获取所有设置了标签的骨骼。
-
-    Returns:
-        Dict[str, str]: 一个字典，键是骨骼标签，值是对应的骨骼长名称。
+    获取场景所有骨骼标签。
+    返回格式: {'Hand': ['L_Hand', 'R_Hand'], 'Shoulder': [...]}
     """
-    all_joints = cmds.ls(type='joint', long=True)
+    all_joints = cmds.ls(type='joint', long=True) or []
     labels_dict = {}
 
     for joint in all_joints:
-        # 骨骼标签存储在 'type' 和 'otherType' 属性中
-        label_type_str = cmds.getAttr(f"{joint}.type", asString=True)
-
+        # 只要有 otherType 属性值，即使 drawLabel=0 也视为存在数据
+        label_type = cmds.getAttr(f"{joint}.type")
         label = ""
-        if label_type_str == 'Other':
-            label = cmds.getAttr(f"{joint}.otherType")
-        elif label_type_str != 'None':
-            label = label_type_str
 
-        if label and label not in labels_dict:  # 确保标签的唯一性
-            labels_dict[label] = joint
-        elif label in labels_dict:
-            cmds.warning(f"发现重复的骨骼标签: '{label}'。请确保标签是唯一的。")
+        if label_type == 18:  # Other
+            label = cmds.getAttr(f"{joint}.otherType")
+        elif label_type != 0:  # 其他预设类型
+            label = cmds.getAttr(f"{joint}.type", asString=True)
+
+        if label:
+            if label not in labels_dict:
+                labels_dict[label] = []
+            labels_dict[label].append(joint)
 
     return labels_dict
 
 
-def set_joint_label(joint_name: str, new_label: str):
-    """
-    为指定的骨骼设置一个新的标签。
+# -----------------------------------------------------------------------------
+# 属性设置逻辑
+# -----------------------------------------------------------------------------
 
-    Args:
-        joint_name (str): 要设置标签的骨骼名称。
-        new_label (str): 新的标签字符串。
-    """
-    if not cmds.objExists(joint_name) or cmds.nodeType(joint_name) != 'joint':
-        cmds.warning(f"'{joint_name}' 不是一个有效的骨骼。")
+def add_attribute_to_node(node_name: str, attr_name: str) -> bool:
+    """添加属性 (double 0-1)"""
+    if not cmds.objExists(node_name): return False
+
+    if cmds.attributeQuery(attr_name, node=node_name, exists=True):
+        print(f"[Logic] 属性已存在: {node_name}.{attr_name}")
+        return True
+
+    try:
+        cmds.addAttr(node_name, longName=attr_name, attributeType='double', min=0, max=1, defaultValue=0, keyable=True)
+        print(f"[Logic] 添加属性成功: {node_name}.{attr_name}")
+        return True
+    except Exception as e:
+        cmds.error(f"添加属性出错: {e}")
         return False
 
-    if not new_label:
-        cmds.warning("标签不能为空。")
+
+def remove_attribute_from_node(node_name: str, attr_name: str) -> bool:
+    """移除属性"""
+    if not cmds.objExists(node_name): return False
+    if not cmds.attributeQuery(attr_name, node=node_name, exists=True): return False
+
+    try:
+        cmds.deleteAttr(node_name, attribute=attr_name)
+        print(f"[Logic] 移除属性成功: {node_name}.{attr_name}")
+        return True
+    except Exception as e:
+        cmds.error(f"移除属性出错: {e}")
         return False
 
-    # 检查新标签是否已在场景中存在
-    all_labels = get_all_joint_labels()
-    if new_label in all_labels and all_labels[new_label] != cmds.ls(joint_name, long=True)[0]:
-        cmds.warning(f"标签 '{new_label}' 已被其他骨骼使用。标签必须是唯一的。")
-        return False
 
-    # 'type' 属性是一个枚举。18 对应 'Other'。
-    cmds.setAttr(f"{joint_name}.type", 18)
-    # 将自定义标签字符串设置到 'otherType' 属性中
-    cmds.setAttr(f"{joint_name}.otherType", new_label, type="string")
-    print(f"已将 '{joint_name}' 的标签设置为 '{new_label}'。")
-    return True
-
-
-def select_joint_by_label(labels_dict: Dict[str, str], label_to_select: str):
+def get_scene_attributes(target_attrs: List[str]) -> Dict[str, List[str]]:
     """
-    根据给定的标签，在场景中选中对应的骨骼。
-
-    Args:
-        labels_dict (Dict[str, str]): 包含标签和骨骼名称的字典。
-        label_to_select (str): 要选中的骨骼的标签。
+    扫描场景中拥有特定属性名的节点。
+    Returns: {'twist': ['nodeA', 'nodeB'], ...}
     """
-    joint_to_select = labels_dict.get(label_to_select)
-    if joint_to_select and cmds.objExists(joint_to_select):
-        cmds.select(joint_to_select, replace=True)
+    result = {}
+    for attr in target_attrs:
+        # 查找所有拥有此属性的 plug (e.g., node.attr)
+        # recursive=True 有助于在复杂层级中查找，但 ls *.attr 是全局查找
+        found_plugs = cmds.ls(f"*.{attr}", recursive=True) or []
+
+        nodes = []
+        for plug in found_plugs:
+            node = plug.split('.')[0]
+            # 去重
+            if node not in nodes:
+                nodes.append(node)
+
+        if nodes:
+            result[attr] = nodes
+
+    return result
+
+
+# -----------------------------------------------------------------------------
+# 辅助
+# -----------------------------------------------------------------------------
+def select_joint_by_label(labels_dict, label_to_select):
+    """(兼容旧接口) 选中特定标签的骨骼"""
+    joints = labels_dict.get(label_to_select, [])
+    valid = [j for j in joints if cmds.objExists(j)]
+    if valid:
+        cmds.select(valid, replace=True)
     else:
-        cmds.warning(f"找不到标签为 '{label_to_select}' 的骨骼，可能已被删除或重命名。")
-
-
-def mirror_selected_joints():
-    """
-    对当前选中的骨骼执行镜像操作。
-
-    使用 YZ 平面进行镜像，并自动搜索替换名称中的 '_L' 为 '_R'。
-    同时也会镜像并更新骨骼标签。
-    """
-    selection = cmds.ls(sl=True, type='joint')
-    if not selection:
-        cmds.warning("请先选中要镜像的骨骼。")
-        return
-
-    # 确保选中的都是左侧骨骼
-    for jnt in selection:
-        if '_L' not in jnt:
-            cmds.warning(f"选中的骨骼 '{jnt}' 名称中不包含 '_L' 后缀，无法进行镜像重命名。已跳过。")
-            return
-
-    print(f"正在镜像 {len(selection)} 根骨骼...")
-    mirrored_joints = cmds.mirrorJoint(
-        selection,
-        mirrorYZ=True,  # 沿YZ平面镜像 (跨越X轴)
-        mirrorBehavior=True,  # 镜像骨骼行为 (旋转方向)
-        searchReplace=('_L', '_R')  # 搜索和替换名称
-    )
-
-    if not mirrored_joints:
-        cmds.warning("镜像操作失败，没有创建新的骨骼。")
-        return
-
-    print(f"镜像完成。创建了: {mirrored_joints}")
-
-    # 更新镜像后骨骼的标签
-    for original_joint in selection:
-        mirrored_joint_name = original_joint.replace('_L', '_R')
-
-        # 确保镜像后的骨骼确实存在
-        if mirrored_joint_name in mirrored_joints or cmds.objExists(mirrored_joint_name):
-            # 获取原始标签
-            original_label = ""
-            label_type_str = cmds.getAttr(f"{original_joint}.type", asString=True)
-            if label_type_str == 'Other':
-                original_label = cmds.getAttr(f"{original_joint}.otherType")
-            elif label_type_str != 'None':
-                original_label = label_type_str
-
-            if original_label and '_L' in original_label:
-                mirrored_label = original_label.replace('_L', '_R')
-                set_joint_label(mirrored_joint_name, mirrored_label)
-
-    cmds.select(mirrored_joints, replace=True)  # 选中新创建的骨骼
+        cmds.warning(f"未找到标签 '{label_to_select}' 对应的骨骼。")

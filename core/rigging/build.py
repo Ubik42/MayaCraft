@@ -1,246 +1,203 @@
-"""
-core/rigging/build.py
-
-自动绑定构建逻辑的主入口 (Auto Rig Orchestrator)。
-负责编排整个骨架的构建过程，利用 BoneManager 查找骨骼，
-并调用 fk/ik/ikfk 模块生成组件，最后整理层级。
-
-前提：场景中的骨骼名称必须是唯一的 (Short Name Unique)。
-"""
+# core/rigging/build.py
+# -*- coding: utf-8 -*-
 
 import maya.cmds as cmds
-from typing import List, Dict, Optional
 import traceback
 
-# 导入核心模块
-from core.rigging import bone
-from core.rigging import fk
-from core.rigging import ikfk
-from core import name
+# 导入模块工厂
+import core.rigging.module as rig_module
+# 导入新的预处理系统
+from core.rigging.pre_build import PreBuildSystem
+
 
 class RigBuilder:
-    """
-    自动绑定构建器。
-    """
-
     def __init__(self):
-        # 1. 初始化并扫描骨骼
-        # 基于简化版 BoneManager，这里建立的是 短名 -> Bone 映射
-        self.bone_manager = bone.BoneManager()
-        self.bone_manager.scan_scene()
-
-        # 2. 定义标准组结构
-        self.rig_groups = {
-            "main": "Rig_Grp",
-            "geometry": "Geometry_Grp",
-            "skeleton": "Skeleton_Grp",
-            "controls": "Controls_Grp",
-            "extras": "Extras_Grp"
+        # 1. 定义标准组结构
+        # 这些组名会传递给 PreBuildSystem 进行创建
+        self.groups = {
+            "main": "Group",
+            "geo": "Geometry_Grp",
+            "ctrl": "Controls_Grp",
+            "main_sys": "MainSystem",
+            "module_sys": "Modules_Grp",
+            "fk_sys": "FKSystem_Grp",
+            "ik_sys": "IKSystem_Grp"
         }
 
-        # 运行时缓存
-        self.master_ctrl: Optional[str] = None
+        # 存储运行时数据
+        self.active_modules = []
+        self.interfaces = {}
 
-    def _safe_parent(self, child: str, parent: str):
+    # --- 基础工具 ---
+
+    def safe_parent(self, child, parent):
+        if child and parent and cmds.objExists(child) and cmds.objExists(parent):
+            try:
+                current_parent = cmds.listRelatives(child, parent=True)
+                if current_parent and current_parent[0] == parent:
+                    return
+                cmds.parent(child, parent)
+            except:
+                pass
+
+    def register_interface(self, name, node):
+        """供子模块调用，注册公共接口 (如 Spine_Chest_Attach)"""
+        self.interfaces[name] = node
+        print(f"[Interface] Registered: {name} -> {node}")
+
+    def get_interface(self, name):
+        """供子模块调用，获取公共接口"""
+        return self.interfaces.get(name)
+
+    def _unlock_channels(self, node):
+        """本地解锁工具，确保 Root 控制器可以约束骨骼"""
+        if not cmds.objExists(node): return
+        attrs = ['tx', 'ty', 'tz', 'rx', 'ry', 'rz', 'sx', 'sy', 'sz', 'v']
+        for attr in attrs:
+            try:
+                cmds.setAttr(f"{node}.{attr}", lock=False)
+            except:
+                pass
+
+    # --- 构建任务 ---
+
+    def _task_create_main_root(self, processed_config):
         """
-        安全的父子约束：防止重复约束或对象不存在导致的报错。
+        创建 Main 和 Root 控制器。
+        注意：此时操作的是已经经过 PreBuild 处理过的 _M/_R 骨骼。
         """
-        if not child or not parent:
+        main_ctrl = "Main_ctrl"
+        root_ctrl = "Root_ctrl"
+
+        # 1. Main Ctrl
+        if not cmds.objExists(main_ctrl):
+            cmds.circle(n=main_ctrl, nr=(0, 1, 0), r=20, ch=False)
+            cmds.setAttr(f"{main_ctrl}.overrideEnabled", 1)
+            cmds.setAttr(f"{main_ctrl}.overrideColor", 17)  # 黄色
+
+            self.safe_parent(main_ctrl, self.groups["main_sys"])
+            self.register_interface("Main_Ctrl", main_ctrl)
+
+            # 让所有系统组跟随 Main Ctrl
+            for sys_key in ["fk_sys", "ik_sys", "module_sys"]:
+                sys_grp = self.groups[sys_key]
+                if cmds.objExists(sys_grp):
+                    if not cmds.listConnections(sys_grp, type="parentConstraint"):
+                        cmds.parentConstraint(main_ctrl, sys_grp, maintainOffset=True)
+
+        # 2. Root Ctrl
+        # 尝试从处理后的配置中找到 Root 骨骼 (通常是 _M 后缀)
+        root_jnt = None
+        if "IK Spine" in processed_config and processed_config["IK Spine"]:
+            # 取脊柱模块的第一个实例的 Root 插槽
+            root_jnt = processed_config["IK Spine"][0].get("Root")
+
+        # 备选：如果在 GeoGroup 里找到了新生成的骨骼，取最顶层那个
+        if not root_jnt:
+            geo_children = cmds.listRelatives(self.groups["geo"], children=True, type="joint")
+            if geo_children:
+                root_jnt = geo_children[0]
+
+        if root_jnt and cmds.objExists(root_jnt) and not cmds.objExists(root_ctrl):
+            cmds.circle(n=root_ctrl, nr=(0, 1, 0), r=15, ch=False)
+            cmds.setAttr(f"{root_ctrl}.overrideEnabled", 1)
+            cmds.setAttr(f"{root_ctrl}.overrideColor", 18)  # 浅蓝
+
+            # 匹配位置 & 约束
+            cmds.matchTransform(root_ctrl, root_jnt, pos=True, rot=False)
+            self.safe_parent(root_ctrl, main_ctrl)
+
+            # 确保骨骼解锁 (双重保险)
+            self._unlock_channels(root_jnt)
+
+            cmds.parentConstraint(root_ctrl, root_jnt, maintainOffset=True)
+            cmds.scaleConstraint(root_ctrl, root_jnt, maintainOffset=True)
+
+            self.register_interface("Root_Ctrl", root_ctrl)
+            print(f"[Build] Root Control Created: {root_ctrl} -> {root_jnt}")
+
+    def _instantiate_from_config(self, config_data):
+        """
+        根据预处理后的配置实例化模块。
+        config_data 格式: {"IK Arm": [{"Hand": "Hand_L", ...}, {"Hand": "Hand_R", ...}]}
+        """
+        print(f"[Build] Instantiating modules from processed config...")
+
+        for module_name, instances_list in config_data.items():
+            for mapping in instances_list:
+                # 调用工厂创建模块 (不传 side，只传 mapping)
+                print("mapping",mapping)
+                mod = rig_module.create_module(module_name, self, mapping)
+                if mod:
+                    self.active_modules.append(mod)
+
+    def build_all(self, ui_config=None):
+        """主执行流程"""
+        print("=" * 60)
+        print(">>> STARTING BUILD SEQUENCE")
+        print("=" * 60)
+
+        if not ui_config:
+            cmds.error("Build failed: No UI configuration data provided.")
             return
 
-        if not cmds.objExists(child) or not cmds.objExists(parent):
-            # 只有当关键对象缺失时才打印警告
-            # print(f"[Build] Warning: Cannot parent '{child}' to '{parent}'. Object missing.")
+        # 1. 初始化预处理系统
+        pre_builder = PreBuildSystem(self.groups)
+
+        # 2. 创建组结构
+        pre_builder.create_structure()
+
+        # 3. [关键] 执行骨骼处理 (复制->重命名->镜像->生成新配置)
+        # processed_config 包含了 _L, _R, _M 的新骨骼数据
+        processed_config = pre_builder.process_skeleton(ui_config)
+
+        if not processed_config:
+            cmds.warning("Skeleton processing returned empty config. Build aborted.")
             return
 
-        # 检查 child 是否已经是 parent 的直接子物体
-        current_parents = cmds.listRelatives(child, parent=True)
-        if current_parents and current_parents[0] == parent:
-            return # 已经是了，跳过
+        # 4. 创建全局控制器 (基于新骨骼)
+        self._task_create_main_root(processed_config)
 
-        try:
-            cmds.parent(child, parent)
-        except Exception as e:
-            # 忽略一些良性的 Maya 错误
-            print(f"[Build] Warning: Parenting failed ({child} -> {parent}): {e}")
+        # 5. 实例化各个功能模块
+        self._instantiate_from_config(processed_config)
 
-    def prepare_scene(self):
-        """
-        初始化场景组结构。
-        """
-        # 创建主组
-        if not cmds.objExists(self.rig_groups["main"]):
-            cmds.createNode("transform", name=self.rig_groups["main"])
+        # 6. 模块排序 (Spine -> Leg/Arm -> Foot/Hand)
+        def sort_weight(mod):
+            t = str(type(mod))
+            if "Spine" in t: return 0
+            if "Leg" in t or "Arm" in t: return 10
+            return 20
 
-        # 创建子组
-        for key, grp_name in self.rig_groups.items():
-            if key == "main": continue
-            if not cmds.objExists(grp_name):
-                cmds.createNode("transform", name=grp_name, parent=self.rig_groups["main"])
+        self.active_modules.sort(key=sort_weight)
 
-                # 锁定 Skeleton_Grp，防止误操作
-                if key == "skeleton":
-                    cmds.setAttr(f"{grp_name}.overrideEnabled", 1)
-                    cmds.setAttr(f"{grp_name}.overrideDisplayType", 2) # Reference mode
+        # 7. 构建阶段 (Build Phase)
+        print(f"--- Building {len(self.active_modules)} Modules ---")
+        for mod in self.active_modules:
+            try:
+                mod.build()
+            except Exception as e:
+                print(f"Error building module {mod}: {e}")
+                traceback.print_exc()
 
-    def create_master_control(self):
-        """
-        创建全局主控制器 (Master/Global)。
-        """
-        self.master_ctrl = "Master_Ctrl"
+        # 8. 连接阶段 (Connect Phase)
+        print("--- Connecting Modules ---")
+        for mod in self.active_modules:
+            try:
+                mod.connect()
+            except Exception as e:
+                print(f"Error connecting module {mod}: {e}")
+                traceback.print_exc()
 
-        if not cmds.objExists(self.master_ctrl):
-            # 创建一个简单的圆圈作为 Master
-            ctl = cmds.circle(n=self.master_ctrl, nr=(0, 1, 0), r=10, ch=False)[0]
-
-            # 标记颜色 (黄色)
-            cmds.setAttr(f"{ctl}.overrideEnabled", 1)
-            cmds.setAttr(f"{ctl}.overrideColor", 17)
-
-            # 将 Master 放入 Controls_Grp
-            if cmds.objExists(self.rig_groups["controls"]):
-                self._safe_parent(ctl, self.rig_groups["controls"])
-
-        return self.master_ctrl
-
-    def build_spine(self, joint_names: List[str]):
-        """
-        构建脊柱 (FK Chain)。
-        Args:
-            joint_names: 有序的骨骼名称列表 (e.g. ['Root', 'Spine1', ...])
-        """
-        print(f"[Build] Generating Spine FK for: {joint_names}")
-
-        parent_ctl_transform = None
-        current_parent = self.master_ctrl
-
-        for i, jnt_name in enumerate(joint_names):
-            # 使用 BoneManager 查找骨骼 (传入短名即可)
-            bone_obj = self.bone_manager.get_bone(jnt_name)
-
-            if not bone_obj:
-                print(f"[Build] Error: Bone '{jnt_name}' not found. Stopping Spine build at this node.")
-                break
-
-            # 生成 FK 控制器
-            # radius=3.0 让脊柱控制器稍微大一点
-            fk_ctl_obj = fk.add_fk(bone_obj, radius=3.0, color_index=17)
-
-            if fk_ctl_obj:
-                ctl_grp = fk_ctl_obj.offset_group
-                ctl_name = fk_ctl_obj.name
-
-                # 处理层级连接
-                if i == 0:
-                    # 根部连到 Master
-                    self._safe_parent(ctl_grp, current_parent)
-                else:
-                    # 后续连到上一个控制器
-                    self._safe_parent(ctl_grp, parent_ctl_transform)
-
-                parent_ctl_transform = ctl_name
-
-    def build_limb(self, start_joint: str, end_joint: str, side: str = "L"):
-        """
-        构建四肢 (IK/FK 自动切换系统)。
-        """
-        print(f"[Build] Generating Limb ({side}) for: {start_joint} -> {end_joint}")
-
-        # 1. 验证骨骼是否存在
-        bone_start = self.bone_manager.get_bone(start_joint)
-        bone_end = self.bone_manager.get_bone(end_joint)
-
-        if not bone_start or not bone_end:
-            print(f"[Build] Error: Cannot find start bone '{start_joint}' or end bone '{end_joint}'. Skipping.")
-            return
-
-        # 2. 调用 ikfk 核心逻辑
-        try:
-            # 关键：直接传入 bone_start.name (现在它是短名，例如 "joint1")
-            # ikfk.py 会用它拼接字符串 "joint1_ik"，不会再有非法字符错误
-            system = ikfk.create_ikfk_system(
-                start_bone_name=bone_start.name,
-                end_bone_name=bone_end.name,
-                ik_suffix="_ik",
-                fk_suffix="_fk"
-            )
-
-            if system:
-                # 成功后，将 Switch 控制器归组
-                if hasattr(system, 'switch_control') and system.switch_control:
-                    if cmds.objExists(system.switch_control):
-                        # 通常放在 Extras 或 Controls 组
-                        self._safe_parent(system.switch_control, self.rig_groups["extras"])
-
-                print(f"[Build] Success: Created IK/FK system for {side} limb.")
-            else:
-                print(f"[Build] Failed: ikfk.create_ikfk_system returned None.")
-
-        except Exception as e:
-            print(f"[Build] Critical Error building limb {side}: {str(e)}")
-            traceback.print_exc()
-
-    def build_all(self, config: Dict):
-        """
-        执行完整构建流程。
-
-        Config 格式示例:
-        {
-            "spine": ["Root", "Spine1", "Spine2", "Chest"],
-            "l_arm": {"start": "L_Shoulder", "end": "L_Wrist"},
-            "r_arm": {"start": "R_Shoulder", "end": "R_Wrist"},
-            ...
-        }
-        """
-        print("="*60)
-        print(">>> STARTING AUTO RIG BUILD")
-        print("="*60)
-
-        # 1. 准备环境
-        self.prepare_scene()
-        self.create_master_control()
-
-        # 2. 构建脊柱 (FK)
-        if "spine" in config:
-            self.build_spine(config["spine"])
-
-        # 3. 构建四肢 (IK/FK)
-        limb_keys = ["l_arm", "r_arm", "l_leg", "r_leg"]
-
-        for key in limb_keys:
-            if key in config:
-                data = config[key]
-                # 简单的判断左右侧逻辑 (根据Key名称)
-                side = "L" if key.startswith("l") else "R"
-
-                self.build_limb(
-                    start_joint=data["start"],
-                    end_joint=data["end"],
-                    side=side
-                )
-
-        # 4. 最终清理
         cmds.select(clear=True)
-        print("="*60)
-        print(">>> RIG BUILD COMPLETE")
-        print("="*60)
+        print("=" * 60)
+        print(">>> BUILD COMPLETE")
+        print("=" * 60)
 
 
-# ========================================================
-# 开发测试入口
-# ========================================================
-def run_build_test():
-    """
-    测试函数。
-    """
-    # 示例配置：请确保场景中存在这些名字的骨骼（短名唯一）
-    rig_config = {
-        "spine": ["joint1", "joint2", "joint3"],
-        "l_arm": {"start": "joint4", "end": "joint6"},
-    }
-
+# 测试入口
+def run_build_test(ui_data=None):
+    if ui_data is None:
+        print("Test run requires UI data.")
+        return
     builder = RigBuilder()
-    builder.build_all(rig_config)
-
-if __name__ == "__main__":
-    run_build_test()
+    builder.build_all(ui_config=ui_data)

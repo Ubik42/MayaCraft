@@ -1,38 +1,58 @@
-# rigging_tab.py
+# ui/rigging/rigging_tab.py
 # -*- coding: utf-8 -*-
+from PySide6 import QtWidgets
 
-from PySide6 import QtWidgets, QtCore
-
-# 导入所有独立的、可折叠的子控件
+# 导入各个子模块 UI
 from ui.rigging.import_widget_ui import ImportWidget
 from ui.rigging.build_widget_ui import BuildWidget
-
-from ui.rigging.finalize_widget_ui import FinalizeWidget
+from ui.rigging.controller_widget_ui import ControllerWidget
 
 
 class RiggingTab(QtWidgets.QWidget):
-    """
-    绑定功能模块的主标签页。
-    它的唯一职责是组装所有独立的子功能模块 (Widgets)。
-    """
-
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._create_ui()
 
+    def _create_ui(self):
         main_layout = QtWidgets.QVBoxLayout(self)
-        main_layout.setAlignment(QtCore.Qt.AlignTop)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(5)
 
-        # --- 1. 创建并添加“导入”功能块 ---
-        self.import_widget = ImportWidget(self)
-        main_layout.addWidget(self.import_widget)
+        # 滚动区域
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
 
-        # --- 2. 创建并添加“构建”功能块 ---
-        self.build_widget = BuildWidget(self)
-        main_layout.addWidget(self.build_widget)
+        content_widget = QtWidgets.QWidget()
+        content_layout = QtWidgets.QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(5, 5, 5, 5)
+        content_layout.setSpacing(5)
 
-        # --- 3. 创建并添加“完成”功能块 ---
-        self.finalize_widget = FinalizeWidget(self)
-        main_layout.addWidget(self.finalize_widget)
+        # --- 添加各个功能模块 ---
 
-        # 添加一个伸缩弹簧，将所有内容推到顶部
-        main_layout.addStretch()
+        # 1. 导入模块
+        self.import_widget = ImportWidget()
+        # [修改] 强制默认展开 (模拟点击或直接设置 checked)
+        if hasattr(self.import_widget, 'toggle_button'):
+            self.import_widget.toggle_button.setChecked(True)
+        content_layout.addWidget(self.import_widget)
+
+        # 2. 构建模块 (Build)
+        self.build_widget = BuildWidget()
+        # [修改] 强制默认展开
+        if hasattr(self.build_widget, 'toggle_button'):
+            self.build_widget.toggle_button.setChecked(True)
+        content_layout.addWidget(self.build_widget)
+
+        # 3. 控制器形状管理
+        self.controller_widget = ControllerWidget()
+        # [修改] 强制默认展开
+        if hasattr(self.controller_widget, 'toggle_button'):
+            self.controller_widget.toggle_button.setChecked(True)
+        content_layout.addWidget(self.controller_widget)
+
+        # 弹簧垫
+        content_layout.addStretch()
+
+        scroll.setWidget(content_widget)
+        main_layout.addWidget(scroll)

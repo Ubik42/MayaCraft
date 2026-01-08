@@ -178,3 +178,47 @@ def quick_align(translate: bool, rotate: bool, scale: bool):
     for src in sources:
         cmds.matchTransform(src, target, pos=translate, rot=rotate, scl=scale)
     print(f"已将 {len(sources)} 个对象对齐到 '{target}'。")
+
+
+
+def create_joint_at_selection_center():
+    """
+    在当前选中项（物体或点线面）的中心创建一个骨骼，
+    并确保骨骼位于大纲视图顶层。
+    """
+    # 获取选择（展开组件，例如选了多个点）
+    sel = cmds.ls(sl=True, flatten=True)
+    if not sel:
+        cmds.warning("请先选择物体或点、线、面组件。")
+        return
+
+    try:
+        # --- 核心算法：使用 Cluster（簇）快速获取中心 ---
+        # 1. 对当前选择创建临时簇 (Maya会自动将簇手柄放在几何中心)
+        # result 返回 [clusterNode, clusterHandle]
+        cluster_result = cmds.cluster(sel)
+        cluster_handle = cluster_result[1]
+
+        # 2. 获取簇手柄的世界坐标 (Rotate Pivot)
+        pos = cmds.xform(cluster_handle, query=True, worldSpace=True, rotatePivot=True)
+
+        # 3. 删除临时簇
+        cmds.delete(cluster_result)
+
+        # --- 创建骨骼 ---
+        # 4. 清除选择，防止骨骼被创建到选中的物体层级下
+        cmds.select(clear=True)
+
+        # 5. 在计算出的位置创建骨骼
+        jnt = cmds.joint(p=pos, name="center_Jnt_01")
+
+        # 6. 双重保险：确保骨骼在大纲顶层（World Parent）
+        if cmds.listRelatives(jnt, parent=True):
+            cmds.parent(jnt, world=True)
+
+        cmds.select(jnt)
+        print(f"已在中心创建骨骼: {jnt} 位置: {pos}")
+        return jnt
+
+    except Exception as e:
+        cmds.error(f"创建中心骨骼失败: {e}")

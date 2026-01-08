@@ -67,6 +67,7 @@ class GeneralTab(QWidget):
         self.joint_size_slider.setValue(100)
         self.joint_size_label = QLabel("1.0")
         self.joint_axis_cb = QCheckBox("显示局部坐标轴 (Joint Axis)")
+        self.create_joint_btn = QPushButton("根据几何生成骨骼位置 (选中项中心)")
 
     def _create_layouts(self):
         """创建和设置布局。"""
@@ -110,6 +111,7 @@ class GeneralTab(QWidget):
         joint_size_layout.addWidget(self.joint_size_label)
         joint_display_layout.addRow("全局骨骼大小:", joint_size_layout)
         joint_display_layout.addRow(self.joint_axis_cb)
+        joint_display_layout.addRow(self.create_joint_btn)
         self.joint_display_group.setLayout(joint_display_layout)
 
         # --- 添加所有组到主布局 ---
@@ -132,6 +134,7 @@ class GeneralTab(QWidget):
 
         self.joint_size_slider.valueChanged.connect(self._on_joint_size_changed)
         self.joint_axis_cb.stateChanged.connect(self._on_joint_axis_toggled)
+        self.create_joint_btn.clicked.connect(self._on_create_joint_at_center)
 
     # --- 槽函数 (Slot Functions) ---
     def _on_get_target(self):
@@ -173,6 +176,14 @@ class GeneralTab(QWidget):
     def _on_joint_axis_toggled(self, state):
         """当“显示局部坐标轴”复选框状态改变时。"""
         self.logic.toggle_joint_axis_display(bool(state))
+
+    def _on_create_joint_at_center(self):
+        """当“根据几何生成骨骼”按钮被点击时。"""
+        # 调用逻辑层的方法
+        if hasattr(self.logic, 'create_joint_at_selection_center'):
+            self.logic.create_joint_at_selection_center()
+        else:
+            print("Error: 逻辑层缺少 create_joint_at_selection_center 方法")
 
 
 # --- 用于在Maya中独立启动和测试的函数 ---
