@@ -1,7 +1,7 @@
 # core/logic/rigging/build_widget_logic.py
 # -*- coding: utf-8 -*-
 import maya.cmds as cmds
-from typing import Dict, List
+from typing import Dict, List, Union, Tuple
 
 
 # -----------------------------------------------------------------------------
@@ -94,29 +94,54 @@ def remove_attribute_from_node(node_name: str, attr_name: str) -> bool:
         return False
 
 
-def get_scene_attributes(target_attrs: List[str]) -> Dict[str, List[str]]:
+def get_scene_attributes(config_attrs: List[str], include_extra: bool = False) -> Union[Dict, Tuple[Dict, Dict]]:
     """
-    扫描场景中拥有特定属性名的节点。
-    Returns: {'twist': ['nodeA', 'nodeB'], ...}
+    [重写] 扫描场景中拥有特定属性名的骨骼。
+
+    Args:
+        config_attrs (List[str]): 配置中定义的属性列表 (例如 ATTR_LIST)。
+        include_extra (bool): 如果为 True，则额外扫描并返回不在 config_attrs 中的其他自定义属性。
+
+    Returns:
+        - 如果 include_extra=False: 返回一个字典 {'twist': ['jnt1'], ...}
+        - 如果 include_extra=True: 返回一个元组 (config_results, extra_results)
+          - config_results: 匹配 config_attrs 的字典
+          - extra_results: 场景中存在但不在 config_attrs 中的其他属性字典
     """
-    result = {}
-    for attr in target_attrs:
-        # 查找所有拥有此属性的 plug (e.g., node.attr)
-        # recursive=True 有助于在复杂层级中查找，但 ls *.attr 是全局查找
-        found_plugs = cmds.ls(f"*.{attr}", recursive=True) or []
 
-        nodes = []
-        for plug in found_plugs:
-            node = plug.split('.')[0]
-            # 去重
-            if node not in nodes:
-                nodes.append(node)
+    all_joints = cmds.ls(type='joint', long=True) or []
+    if not all_joints:
+        # 如果没有骨骼，根据请求返回空字典或空元组
+        return {} if not include_extra else ({}, {})
 
-        if nodes:
-            result[attr] = nodes
+    config_results = {}
+    extra_results = {}
 
-    return result
+    # 将配置列表转为集合，可以极大地提高查找效率
+    config_set = set(config_attrs)
 
+    for jnt in all_joints:
+        # 获取骨骼上所有用户自定义的、可 key 的属性
+        user_attrs = cmds.listAttr(jnt, userDefined=True, keyable=True) or []
+
+        for attr in user_attrs:
+            # 判断属性属于“预设”还是“额外”
+            if attr in config_set:
+                # 放入预设结果字典
+                if attr not in config_results:
+                    config_results[attr] = []
+                config_results[attr].append(jnt)
+            elif include_extra:
+                # 如果开启了 extra 扫描，放入额外结果字典
+                if attr not in extra_results:
+                    extra_results[attr] = []
+                extra_results[attr].append(jnt)
+
+    # 根据请求的模式返回不同格式的数据
+    if include_extra:
+        return config_results, extra_results
+    else:
+        return config_results
 
 # -----------------------------------------------------------------------------
 # 辅助
@@ -129,3 +154,5 @@ def select_joint_by_label(labels_dict, label_to_select):
         cmds.select(valid, replace=True)
     else:
         cmds.warning(f"未找到标签 '{label_to_select}' 对应的骨骼。")
+
+

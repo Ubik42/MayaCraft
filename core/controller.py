@@ -254,11 +254,17 @@ def replace_shape(target_node, shape_data_list):
         temp_transforms.append(tmp_curve)
 
     # 3. 将新 Shape Parent 给目标
+    # 3. 将新 Shape Parent 给目标
     for tmp in temp_transforms:
-        shapes = cmds.listRelatives(tmp, shapes=True)
-        if shapes:
-            cmds.parent(shapes[0], target_node, relative=True, shape=True)
-        cmds.delete(tmp)
+        try:
+            shapes = cmds.listRelatives(tmp, shapes=True)
+            if shapes:
+                cmds.parent(shapes[0], target_node, relative=True, shape=True)
+        except Exception as e:
+            print(f"Error parenting shape from {tmp}: {e}")
+        finally:
+            if cmds.objExists(tmp):
+                cmds.delete(tmp)
 
     # 4. 重命名 Shape (清理命名)
     new_shapes = cmds.listRelatives(target_node, shapes=True)

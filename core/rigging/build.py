@@ -1,20 +1,29 @@
 # core/rigging/build.py
 # -*- coding: utf-8 -*-
-
-import maya.cmds as cmds
 import traceback
+from functools import partial
 
-# 导入模块工厂
-import core.rigging.module as rig_module
-# 导入骨骼处理模块
-import core.rigging.build_joint as build_joint
-# 导入基础 FK 构建逻辑
-import core.rigging.build_fk as build_fk
+# Import Factory
+import core.rigging.ik_label as rig_module
+import core.rigging.attribute as attribute_pkg
 
-from core import tool
+# Import Base System
+from core.rigging.base import RigTask
+
+# Import Build Functions
+import core.rigging.build_func.build_structure as build_structure
+import core.rigging.build_func.build_joint as build_joint
+import core.rigging.build_func.build_main as build_main
+import core.rigging.build_func.build_base_fk as build_base_fk
+import core.rigging.build_func.build_utils as build_utils
 
 
-class RigBuilder:
+class RigBuilder:  # Mixin/Inherit RigTask for get_priority helper? Or just add method
+    def get_priority(self, key, default):
+        from core.rigging.base import PriorityConfig
+
+        return PriorityConfig.get(key, default)
+
     def __init__(self):
         # 1. 定义标准组结构配置
         self.groups = {
@@ -26,6 +35,9 @@ class RigBuilder:
             "global_sys": "GlobalSystem",
             "fk_sys": "FKSystem",
             "ik_sys": "IKSystem",
+            "ik_joints": "IKJoints",
+            "ik_handle": "IKHandle",
+            "ik_pv": "IKPoleVector",
             "fkik_sys": "FKIKSystem",
             "driving_sys": "DrivingSystem",
             "aim_sys": "AimSystem",
@@ -33,181 +45,143 @@ class RigBuilder:
             "twist_sys": "TwistSystem",
             "constraint_sys": "ConstraintSystem",
             "dynamic_sys": "DynamicSystem",
-            "build_pose": "buildPose"
+            "build_pose": "buildPose",
         }
 
         # 存储运行时数据
         self.active_modules = []
-        self.interfaces = {}
+        self.active_attributes = []
 
-    # --- 基础接口 ---
+        # 任务队列
+        self.task_queue = []
+        self.processed_config = {}
+        self.node_map = {}  # Source (Short) -> Deform (Long) map
+        self.ui_config_ref = None  # Store reference to UI config
 
-    def register_interface(self, name, node):
-        """供子模块调用，注册公共接口"""
-        self.interfaces[name] = node
-        print(f"[Interface] Registered: {name} -> {node}")
+    def find_deform_node(self, source_node: str) -> str:
+        """Looks up the deform node from a source node name."""
+        if not source_node:
+            return None
+        short_name = source_node.split("|")[-1]
+        return self.node_map.get(short_name, short_name)
 
-    def get_interface(self, name):
-        """供子模块调用，获取公共接口"""
-        return self.interfaces.get(name)
-
-    # --- 构建任务 ---
-
-    def _task_setup_scene_structure(self):
-        """建立完整的场景组结构"""
-        print(">>> Setting up scene structure...")
-
-        if not cmds.objExists(self.groups["main"]):
-            cmds.createNode("transform", name=self.groups["main"])
-
-        for key in ["geo", "ctrl"]:
-            grp_name = self.groups[key]
-            if not cmds.objExists(grp_name):
-                cmds.createNode("transform", name=grp_name)
-            tool.safe_parent(grp_name, self.groups["main"])
-
-        exclude_keys = ["main", "geo", "ctrl"]
-        ctrl_grp = self.groups["ctrl"]
-
-        for key, grp_name in self.groups.items():
-            if key in exclude_keys:
-                continue
-            if not cmds.objExists(grp_name):
-                cmds.createNode("transform", name=grp_name)
-            tool.safe_parent(grp_name, ctrl_grp)
-
-    def _task_create_main_root(self, processed_config):
-        """创建 Main 和 Root 控制器"""
-        main_ctrl = "Main_ctrl"
-        root_ctrl = "Root_ctrl"
-
-        # 1. Main Ctrl
-        if not cmds.objExists(main_ctrl):
-            cmds.circle(n=main_ctrl, nr=(0, 1, 0), r=20, ch=False)
-            cmds.setAttr(f"{main_ctrl}.overrideEnabled", 1)
-            cmds.setAttr(f"{main_ctrl}.overrideColor", 17)  # 黄色
-
-            tool.safe_parent(main_ctrl, self.groups["main_sys"])
-            self.register_interface("Main_Ctrl", main_ctrl)
-
-            exclude_grps = [self.groups["main_sys"], self.groups["geo"], self.groups["ctrl"], self.groups["main"]]
-            for key, grp_name in self.groups.items():
-                if grp_name in exclude_grps:
-                    continue
-                if cmds.objExists(grp_name):
-                    if not cmds.listConnections(grp_name, type="parentConstraint"):
-                        cmds.parentConstraint(main_ctrl, grp_name, maintainOffset=True)
-
-        # 2. Root Ctrl
-        root_jnt = None
-        # 尝试从处理后的配置找
-        if processed_config and "IK Spine" in processed_config and processed_config["IK Spine"]:
-            root_jnt = processed_config["IK Spine"][0].get("Root")
-
-        # 备选：如果在 Geometry_Grp 发现了新生成的骨骼，则取最顶层
-        if not root_jnt or not cmds.objExists(root_jnt):
-            geo_children = cmds.listRelatives(self.groups["geo"], children=True, type="joint", fullPath=True)
-            if geo_children:
-                root_jnt = geo_children[0]
-
-        if root_jnt and cmds.objExists(root_jnt) and not cmds.objExists(root_ctrl):
-            cmds.circle(n=root_ctrl, nr=(0, 1, 0), r=15, ch=False)
-            cmds.setAttr(f"{root_ctrl}.overrideEnabled", 1)
-            cmds.setAttr(f"{root_ctrl}.overrideColor", 18)  # 浅蓝
-
-            cmds.matchTransform(root_ctrl, root_jnt, pos=True, rot=False)
-            tool.safe_parent(root_ctrl, main_ctrl)
-
-            tool.unlock_transform(root_jnt, translate=True, rotate=True, scale=True, visibility=True)
-
-            cmds.parentConstraint(root_ctrl, root_jnt, maintainOffset=True)
-            cmds.scaleConstraint(root_ctrl, root_jnt, maintainOffset=True)
-
-            self.register_interface("Root_Ctrl", root_ctrl)
-            print(f"[Build] Root Control Created: {root_ctrl} -> {root_jnt}")
-
-    def _task_build_base_fk(self):
-        """调用 build_fk 生成基础 FK 系统"""
-        print(">>> Building Base FK System...")
-        try:
-            build_fk.build(self)
-        except Exception as e:
-            print(f"Error building base FK: {e}")
-            traceback.print_exc()
-
-    def _instantiate_from_config(self, config_data):
-        """根据配置实例化模块"""
-        if not config_data:
-            return
-
-        print(f"[Build] Instantiating modules from processed config...")
-        for module_name, instances_list in config_data.items():
-            for mapping in instances_list:
-                mod = rig_module.create_module(module_name, self, mapping)
-                if mod:
-                    self.active_modules.append(mod)
+    # --- 核心构建流 ---
 
     def build_all(self, ui_config=None):
-        """主执行流程"""
+        """主执行流程: Task Based"""
         print("=" * 60)
-        print(">>> STARTING BUILD SEQUENCE")
-        print("=" * 60)
-
-        # 如果没有传入配置，初始化为空字典，确保 JointBuilder 能运行基础逻辑
-        if ui_config is None:
-            ui_config = {}
-
-        # 1. 创建组结构 (无论是否有配置都执行)
-        self._task_setup_scene_structure()
-
-        # 2. 调用 JointBuilder 处理骨骼
-        # 注意：即便 ui_config 为空，JointBuilder 也会复制骨骼并进行基础命名处理
-        joint_builder = build_joint.JointBuilder(self.groups)
-        processed_config = joint_builder.process_skeleton(ui_config)
-
-        # 3. 创建全局控制器 (即使没有配置，也会尝试通过扫描 Geometry_Grp 寻找 Root)
-        self._task_create_main_root(processed_config)
-
-        # 4. 构建基础 FK 系统 (基于 Geometry_Grp 里的骨骼生成，不依赖配置)
-        self._task_build_base_fk()
-
-        # 5. 实例化模块 (如果有配置数据则执行)
-        if processed_config:
-            self._instantiate_from_config(processed_config)
-
-        # 6. 模块排序与执行
-        if self.active_modules:
-            def sort_weight(mod):
-                t = str(type(mod))
-                if "Spine" in t: return 0
-                if "Leg" in t or "Arm" in t: return 10
-                return 20
-            self.active_modules.sort(key=sort_weight)
-
-            print(f"--- Building {len(self.active_modules)} Modules ---")
-            for mod in self.active_modules:
-                try:
-                    mod.build()
-                except Exception as e:
-                    print(f"Error building module {mod}: {e}")
-                    traceback.print_exc()
-
-            print("--- Connecting Modules ---")
-            for mod in self.active_modules:
-                try:
-                    mod.connect()
-                except Exception as e:
-                    print(f"Error connecting module {mod}: {e}")
-                    traceback.print_exc()
-
-        cmds.select(clear=True)
-        print("=" * 60)
-        print(">>> BUILD COMPLETE")
+        print(">>> STARTING BUILD SEQUENCE (TASK BASED)")
         print("=" * 60)
 
+        self.task_queue = []
 
-# 测试入口
+        self.ui_config_ref = ui_config
+
+        # 1. 场景结构
+        self.task_queue.append(
+            RigTask(
+                self.get_priority("task_structure", 0),
+                partial(build_structure.build_scene_structure, self.groups),
+                "Setup Scene Structure",
+            )
+        )
+
+        # 2. 实例化 RigObject 并收集任务 (EARLY: Priority 3)
+        self.task_queue.append(
+            RigTask(
+                self.get_priority("task_instantiate", 5),
+                self._task_instantiate_and_collect,
+                "Instantiate Modules & Attributes",
+            )
+        )
+
+        # 3. 骨骼处理
+        self.task_queue.append(
+            RigTask(
+                self.get_priority("task_build_joint", 10),
+                partial(build_joint.process_skeleton, self, ui_config),
+                "Build Skeleton",
+            )
+        )
+
+        # 4. Base FK
+        self.task_queue.append(
+            RigTask(
+                self.get_priority("task_base_fk", 15),
+                partial(build_base_fk.build_base_fk, self.groups),
+                "Build Base FK",
+            )
+        )
+
+        # 5. Controller Set
+        self.task_queue.append(
+            RigTask(
+                self.get_priority("task_controller_set", 999),
+                partial(build_utils.create_controller_set, self.groups),
+                "Create Controller Sets",
+            )
+        )
+
+        # 执行循环
+        executed_count = 0
+        while self.task_queue:
+            self.task_queue.sort(key=lambda t: t.priority)
+            current_task = self.task_queue.pop(0)
+
+            print(f"--- [Task {current_task.priority}] {current_task.name} ---")
+            try:
+                current_task.run()
+                executed_count += 1
+            except Exception as e:
+                print(f"[ERROR] Task '{current_task.name}' failed: {e}")
+                traceback.print_exc()
+                pass
+
+        print("=" * 60)
+        print(f">>> BUILD COMPLETE ({executed_count} Tasks Executed)")
+        print("=" * 60)
+
+    # --- 动态任务生成，生成类实例传参方法不一样，生成后收集任务方法一样的 ---
+
+    def _task_instantiate_and_collect(self):
+        """Priority 40: 实例化模块和属性，并请求它们的任务"""
+        print(">>> Instantiating Rig Objects...")
+
+        # 1. Instantiate Modules & Attributes
+        # Unified instantiation from processed_config
+        # 1. Instantiate Modules & Attributes
+        # Prioritize processed_config (Deform), fallback to ui_config (Source)
+        config_source = (
+            self.processed_config if self.processed_config else self.ui_config_ref
+        )
+
+        if config_source:
+            for label_name, instances_list in config_source.items():
+                for mapping in instances_list:
+                    # Try creating as IK/Rig Module
+                    mod = rig_module.create_module(label_name, self, mapping)
+                    if mod:
+                        if hasattr(mod, "create_tasks"):
+                            self.active_modules.append(mod)
+                        continue  # Found as module, next instance
+
+                    # Try creating as Attribute
+                    attr = attribute_pkg.create_attribute(label_name, self, mapping)
+                    if attr:
+                        if hasattr(attr, "create_tasks"):
+                            self.active_attributes.append(attr)
+                        continue  # Found as attribute
+
+                    print(f"[Build] Warning: No factory found for '{label_name}'")
+
+        # 3. Collect Tasks
+        for obj in self.active_modules + self.active_attributes:
+            new_tasks = obj.create_tasks(self)
+            if new_tasks:
+                self.task_queue.extend(new_tasks)
+
+
+# 入口
 def run_build_test(ui_data=None):
-    # 现在 ui_data 为 None 时不再退出，而是继续执行基础构建
     builder = RigBuilder()
     builder.build_all(ui_config=ui_data)

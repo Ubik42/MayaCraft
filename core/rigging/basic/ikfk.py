@@ -1,41 +1,19 @@
-# core/rigging/ikfk.py
+# core/rigging/basic/ikfk.py
 # -*- coding: utf-8 -*-
 """
 ikfk.py
 IK/FK 切换系统模块。
-最终重构版：
-1. 集成 core.controller。
-2. 返回完整的 IK/FK 组结构，支持外部重组。
+
+修改版：
+1. 移除 IKFKSystem 类，改用字典返回。
+2. 移除 Stretchy 功能。
+3. 支持 IK 组件的自定义父级 (IKJoints, IKHandle, IKPoleVector)。
 """
 
 import maya.cmds as cmds
-from typing import Optional, List, Tuple
+from typing import Optional, List, Dict
 
-# 导入核心模块
-from core.rigging.basic import fk, ik
-from core import controller
-
-
-class IKFKSystem(object):
-    """IK/FK 系统数据容器"""
-
-    def __init__(
-            self,
-            switch_control: str,
-            bind_chain: List[str],
-            ik_chain: List[str],
-            fk_chain: List[str],
-            ik_grp: str = None,  # [新增] IK 系统总组
-            fk_ctrl_grp: str = None,  # [新增] FK 系统总组
-            stretchy_system=None
-    ):
-        self.switch_control = switch_control
-        self.bind_chain = bind_chain
-        self.ik_chain = ik_chain
-        self.fk_chain = fk_chain
-        self.ik_grp = ik_grp
-        self.fk_ctrl_grp = fk_ctrl_grp
-        self.stretchy_system = stretchy_system
+from core.rigging.basic import ik
 
 
 def _get_bind_chain_names(start_name: str, end_name: str) -> List[str]:
@@ -43,12 +21,13 @@ def _get_bind_chain_names(start_name: str, end_name: str) -> List[str]:
     chain = []
     curr = end_name
     safeguard = 0
-    # 增加全路径判断防止同名错误
     start_short = start_name.split('|')[-1]
 
     while safeguard < 100:
-        chain.append(curr)
-        # 比较短名
+        # [修改] 过滤 Inbetween Parts
+        if not cmds.attributeQuery("isInbetweenPart", node=curr, exists=True):
+            chain.append(curr)
+        
         if curr.split('|')[-1] == start_short:
             break
         parents = cmds.listRelatives(curr, parent=True, fullPath=True)
@@ -60,92 +39,14 @@ def _get_bind_chain_names(start_name: str, end_name: str) -> List[str]:
     return list(reversed(chain))
 
 
-def _create_ikfk_chains(
-        start_bone_name: str,
-        end_bone_name: str,
-        ik_suffix: str = '_ik',
-        fk_suffix: str = '_fk'
-) -> Tuple[str, str]:
-    """创建 IK 和 FK 骨骼链"""
-    bind_names_full = _get_bind_chain_names(start_bone_name, end_bone_name)
-    chain_len = len(bind_names_full)
-
-    if chain_len == 0:
-        print("[IKFK] Error: Could not verify bind chain path.")
-        return "", ""
-
-    def generate_chain(suffix):
-        # 复制骨骼链
-        temp_root = cmds.duplicate(start_bone_name, renameChildren=True)[0]
-
-        # 遍历复制出的层级，找到需要保留的链条
-        new_chain_nodes = []
-        curr_node = temp_root
-
-        for _ in range(chain_len):
-            new_chain_nodes.append(curr_node)
-            children = cmds.listRelatives(curr_node, children=True, fullPath=True, type='joint')
-            if children:
-                curr_node = children[0]
-            else:
-                break
-
-        # 删除多余的子骨骼
-        last_kept_node = new_chain_nodes[-1]
-        children_to_delete = cmds.listRelatives(last_kept_node, children=True, fullPath=True)
-        if children_to_delete:
-            try:
-                cmds.delete(children_to_delete)
-            except:
-                pass
-
-        # 重命名 (使用原始短名 + 后缀)
-        for bind_full, node_path in zip(reversed(bind_names_full), reversed(new_chain_nodes)):
-            bind_short = bind_full.split('|')[-1]
-            target_name = f"{bind_short}{suffix}"
-            try:
-                # rename 返回的是新名字(短名)
-                cmds.rename(node_path, target_name)
-            except:
-                pass
-
-        # 返回重命名后的根节点短名
-        root_short = bind_names_full[0].split('|')[-1]
-        return f"{root_short}{suffix}"
-
-    ik_root_name = generate_chain(ik_suffix)
-    fk_root_name = generate_chain(fk_suffix)
-
-    # 将新链条归位到原始父级 (或者世界)
-    original_parent = cmds.listRelatives(start_bone_name, parent=True)
-    if original_parent:
-        target_parent = original_parent[0]
-        for child in [ik_root_name, fk_root_name]:
-            try:
-                if cmds.objExists(child):
-                    current = cmds.listRelatives(child, parent=True)
-                    if not current or current[0] != target_parent:
-                        cmds.parent(child, target_parent)
-            except:
-                pass
-    else:
-        # 如果原始骨骼没有父级，把生成的也放到世界
-        for child in [ik_root_name, fk_root_name]:
-            if cmds.listRelatives(child, parent=True):
-                cmds.parent(child, world=True)
-
-    return ik_root_name, fk_root_name
-
-
 def _create_ikfk_switch_network(
         start_bone: str,
         end_bone: str,
-        ik_suffix: str,
-        fk_suffix: str,
-        switch_shape_name: str,
-        ik_grp_obj: str,  # [新增] 传入确定的组对象
-        fk_grp_obj: str  # [新增] 传入确定的组对象
-) -> Optional[IKFKSystem]:
+        ikx_chain: List[str],
+        ik_grp_obj: str,
+        fk_grp_obj: str,
+        pv_ctrl_name: str = None
+) -> Dict:
     """创建控制器、约束混合及可见性网络"""
 
     # 1. 创建 Switch 控制器
@@ -156,7 +57,7 @@ def _create_ikfk_switch_network(
         switch_ctrl = switch_name
     else:
         switch_ctrl = cmds.circle(name=switch_name, normal=(0, 1, 0), radius=1.0, ch=False)[0]
-        controller.apply_stored_shape(switch_ctrl, switch_shape_name)
+        # controller.apply_stored_shape(switch_ctrl, switch_shape_name) # Logic Removed
 
         if cmds.objExists(end_bone):
             cmds.matchTransform(switch_ctrl, end_bone, pos=True)
@@ -171,14 +72,12 @@ def _create_ikfk_switch_network(
 
     # 2. 获取链条对象
     bind_chain = _get_bind_chain_names(start_bone, end_bone)
-
-    # 重新推导 IK/FK 链名 (注意这里假设 generate_chain 逻辑正确)
-    ik_chain = []
-    fk_chain = []
+    
+    # 推导 FKX 链
+    fkx_chain = []
     for b in bind_chain:
         short = b.split('|')[-1]
-        ik_chain.append(f"{short}{ik_suffix}")
-        fk_chain.append(f"{short}{fk_suffix}")
+        fkx_chain.append(f"FKX_{short}")
 
     # 3. 创建约束混合网络
     range_node = cmds.createNode('setRange', name=f"{start_short}_blend_range")
@@ -190,55 +89,105 @@ def _create_ikfk_switch_network(
     cmds.connectAttr(f"{range_node}.outValueX", f"{rev_node}.inputX")
 
     for i, bind_b in enumerate(bind_chain):
-        ik_b = ik_chain[i]
-        fk_b = fk_chain[i]
+        if i >= len(ikx_chain) or i >= len(fkx_chain): break
+
+        ik_b = ikx_chain[i]
+        fkx_b = fkx_chain[i]
+        
+        if not (cmds.objExists(ik_b) and cmds.objExists(fkx_b)):
+             print(f"[IKFK] Warning: Missing driver joint. IKX:{ik_b}, FKX:{fkx_b}")
+             continue
+
         try:
-            if cmds.objExists(ik_b) and cmds.objExists(fk_b):
-                oc = cmds.orientConstraint(ik_b, fk_b, bind_b, maintainOffset=True)[0]
-                w = cmds.orientConstraint(oc, q=True, weightAliasList=True)
-                cmds.connectAttr(f"{range_node}.outValueX", f"{oc}.{w[0]}")
-                cmds.connectAttr(f"{rev_node}.outputX", f"{oc}.{w[1]}")
-        except:
-            pass
+             # 获取 Bind 骨骼上的约束
+             pc_list = cmds.listConnections(bind_b, type="parentConstraint")
+             sc_list = cmds.listConnections(bind_b, type="scaleConstraint")
+             
+             pc = pc_list[0] if pc_list else None
+             sc = sc_list[0] if sc_list else None
+             
+             # 连接权重
+             if pc:
+                 pc_targets = cmds.parentConstraint(pc, q=True, weightAliasList=True)
+                 if pc_targets:
+                     ik_attr = next((x for x in pc_targets if ik_b in x), None)
+                     fkx_attr = next((x for x in pc_targets if fkx_b in x), None)
+                     
+                     if ik_attr and fkx_attr:
+                         cmds.connectAttr(f"{range_node}.outValueX", f"{pc}.{ik_attr}", f=True)
+                         cmds.connectAttr(f"{rev_node}.outputX", f"{pc}.{fkx_attr}", f=True)
+
+             if sc:
+                 sc_targets = cmds.scaleConstraint(sc, q=True, weightAliasList=True)
+                 if sc_targets:
+                     ik_attr = next((x for x in sc_targets if ik_b in x), None)
+                     fkx_attr = next((x for x in sc_targets if fkx_b in x), None)
+                     
+                     if ik_attr and fkx_attr:
+                         cmds.connectAttr(f"{range_node}.outValueX", f"{sc}.{ik_attr}", f=True)
+                         cmds.connectAttr(f"{rev_node}.outputX", f"{sc}.{fkx_attr}", f=True)
+
+        except Exception as e:
+            print(f"[IKFK] Constraint Blend Error on {bind_b}: {e}")
 
     # 4. 可见性网络
-    # [修改] 直接使用传入的组，不再反查
+    # 4. 可见性网络 (使用 Condition 节点实现更稳健的显示逻辑)
     if ik_grp_obj and fk_grp_obj:
-        ik_blend = cmds.createNode('blendColors', n=f"{start_short}_ik_vis")
-        cmds.connectAttr(f"{switch_ctrl}.Auto_Vis", f"{ik_blend}.blender")
-        cmds.connectAttr(f"{switch_ctrl}.IK_Vis", f"{ik_blend}.color2R")
-        cmds.connectAttr(f"{range_node}.outValueX", f"{ik_blend}.color1R")
-        cmds.connectAttr(f"{ik_blend}.outputR", f"{ik_grp_obj}.visibility")
+        # 逻辑: 只要 Blend > 0，IK 显示；只要 Blend < 10，FK 显示。
+        # 这样在中间状态(1-9)两者都显示，方便对位。
+        
+        # IK Vis Condition: Blend > 0
+        ik_cond = cmds.createNode('condition', n=f"{start_short}_ik_vis_cond")
+        cmds.connectAttr(f"{switch_ctrl}.IKFK_Blend", f"{ik_cond}.firstTerm")
+        cmds.setAttr(f"{ik_cond}.secondTerm", 0)
+        cmds.setAttr(f"{ik_cond}.operation", 2) # Greater Than
+        cmds.setAttr(f"{ik_cond}.colorIfTrueR", 1)
+        cmds.setAttr(f"{ik_cond}.colorIfFalseR", 0)
+        
+        # FK Vis Condition: Blend < 10
+        fk_cond = cmds.createNode('condition', n=f"{start_short}_fk_vis_cond")
+        cmds.connectAttr(f"{switch_ctrl}.IKFK_Blend", f"{fk_cond}.firstTerm")
+        cmds.setAttr(f"{fk_cond}.secondTerm", 10)
+        cmds.setAttr(f"{fk_cond}.operation", 4) # Less Than
+        cmds.setAttr(f"{fk_cond}.colorIfTrueR", 1)
+        cmds.setAttr(f"{fk_cond}.colorIfFalseR", 0)
 
-        # PV Vis (如果 PV 在 IK 组里，其实不用单独连，但为了保险还是连一下)
-        ik_root_short = ik_chain[0].split('|')[-1]
-        pv_ctrl = f"{ik_root_short}_pv_ctrl"
-        pv_indicator = f"{ik_root_short}_pv_indicator"
+        # 把 Auto_Vis 考虑进去 (Auto_Vis * Result)
+        # 用 multiplyDivide
+        ik_vis_mult = cmds.createNode('multDoubleLinear', n=f"{start_short}_ik_vis_final")
+        cmds.connectAttr(f"{ik_cond}.outColorR", f"{ik_vis_mult}.input1")
+        cmds.connectAttr(f"{switch_ctrl}.Auto_Vis", f"{ik_vis_mult}.input2")
+        cmds.connectAttr(f"{ik_vis_mult}.output", f"{ik_grp_obj}.visibility")
+        
+        # PV Vis 跟随 IK
+        pv_ctrl = pv_ctrl_name
+        if not pv_ctrl and ikx_chain:
+             ik_root_short = ikx_chain[0].split('|')[-1]
+             pv_base_name = ik_root_short
+             if pv_base_name.startswith("IKX_"): pv_base_name = pv_base_name[4:]
+             if pv_base_name.startswith("IKX"): pv_base_name = pv_base_name[3:]
+             pv_ctrl = f"Pole{pv_base_name}" 
+        
+        if pv_ctrl and cmds.objExists(pv_ctrl):
+            cmds.connectAttr(f"{ik_vis_mult}.output", f"{pv_ctrl}.visibility")
 
-        if cmds.objExists(pv_ctrl):
-            cmds.connectAttr(f"{ik_blend}.outputR", f"{pv_ctrl}.visibility")
-        if cmds.objExists(pv_indicator):
-            cmds.connectAttr(f"{ik_blend}.outputR", f"{pv_indicator}.visibility")
+        fk_vis_mult = cmds.createNode('multDoubleLinear', n=f"{start_short}_fk_vis_final")
+        cmds.connectAttr(f"{fk_cond}.outColorR", f"{fk_vis_mult}.input1")
+        cmds.connectAttr(f"{switch_ctrl}.Auto_Vis", f"{fk_vis_mult}.input2")
+        cmds.connectAttr(f"{fk_vis_mult}.output", f"{fk_grp_obj}.visibility")
 
-        fk_blend = cmds.createNode('blendColors', n=f"{start_short}_fk_vis")
-        cmds.connectAttr(f"{switch_ctrl}.Auto_Vis", f"{fk_blend}.blender")
-        cmds.connectAttr(f"{switch_ctrl}.FK_Vis", f"{fk_blend}.color2R")
-        cmds.connectAttr(f"{rev_node}.outputX", f"{fk_blend}.color1R")
-        cmds.connectAttr(f"{fk_blend}.outputR", f"{fk_grp_obj}.visibility")
-
-    return IKFKSystem(switch_ctrl, bind_chain, ik_chain, fk_chain, ik_grp_obj, fk_grp_obj)
+    return {
+        "switch_ctrl": switch_ctrl,
+        "ik_grp": ik_grp_obj,
+        "fk_grp": fk_grp_obj
+    }
 
 
 def create_ikfk_system(
         start_bone_name: str,
         end_bone_name: str,
-        ik_suffix: str = '_ik',
-        fk_suffix: str = '_fk',
-        switch_shape_name: str = "Switch",
-        ik_shape_name: str = "Box",
-        pv_shape_name: str = "FourArrows",
-        enable_stretchy: bool = False
-) -> Optional[IKFKSystem]:
+        existing_fk_sys: str = None,
+) -> Optional[Dict]:
     """
     主构建入口。
     """
@@ -246,62 +195,47 @@ def create_ikfk_system(
         print(f"[IKFK] Error: Bones not found: {start_bone_name}, {end_bone_name}")
         return None
 
-    # 1. 创建骨骼链
-    ik_root, fk_root = _create_ikfk_chains(start_bone_name, end_bone_name, ik_suffix, fk_suffix)
-
-    # 2. 准备名称
-    # _create_ikfk_chains 返回的是短名
-    ik_start = ik_root
-    fk_start = fk_root
-
-    end_short = end_bone_name.split('|')[-1]
-    ik_end = f"{end_short}{ik_suffix}"
-
     bind_chain = _get_bind_chain_names(start_bone_name, end_bone_name)
-    bind_mid_joint = bind_chain[-2] if len(bind_chain) >= 2 else None
 
-    # 3. 添加 IK 控制器
-    ik_ctl = ik.add_ik(
-        'RP',
-        ik_start,
-        ik_end,
-        main_shape_name=ik_shape_name,
-        pv_shape_name=pv_shape_name,
-        pv_target_joint=bind_mid_joint
+    # 1. 创建 IK 系统
+    ik_data = ik.build_ik_system(
+        start_jnt=start_bone_name,
+        end_jnt=end_bone_name,
+        ik_type='RP',
     )
+    
+    if not ik_data:
+        print("[IKFK] Error: Failed to create IK system.")
+        return None
+        
+    ikx_chain = ik_data.get('ikx_joints', [])
+    ikx_end = ikx_chain[-1] if ikx_chain else None
+    
+    ik_offset = ik_data.get('ik_offset')
+    ik_ctrl = ik_data.get('ik_ctrl')
+    pv_ctrl = ik_data.get('pv_ctrl')
 
-    # 4. 添加 FK 控制器链
-    fk_ctls = fk.add_fk_to_hierarchy(fk_start)
+    # 2. 处理 FK 部分
+    fk_root_grp = existing_fk_sys
+    if not fk_root_grp:
+        print(f"[IKFK] Warning: No existing FK provided for {start_bone_name}.")
 
-    # [关键] 获取 FK 根组 (第一个控制器的 Offset Group)
-    fk_root_grp = fk_ctls[0].offset_group if fk_ctls else None
-
-    # [关键] 获取 IK 根组
-    ik_root_grp = ik_ctl.offset_group if ik_ctl else None
-
-    # 5. 构建网络
-    system = _create_ikfk_switch_network(
+    # 3. 构建网络
+    # ik_grp_obj 用于可见性控制，通常是控制器组(ik_offset)
+    system_data = _create_ikfk_switch_network(
         start_bone_name,
         end_bone_name,
-        ik_suffix,
-        fk_suffix,
-        switch_shape_name,
-        ik_grp_obj=ik_root_grp,
-        fk_grp_obj=fk_root_grp
+        ikx_chain=ikx_chain,
+        ik_grp_obj=ik_offset, 
+        fk_grp_obj=fk_root_grp,
+        pv_ctrl_name=pv_ctrl 
     )
+        
+    # 4. 修正手腕/脚踝旋转跟随问题
+    if ik_ctrl and ikx_end:
+         cmds.orientConstraint(ik_ctrl, ikx_end, maintainOffset=True)
 
-    # 6. 拉伸系统
-    if enable_stretchy and ik_ctl:
-        from core.rigging.attribute import stretchy
-        stretchy.create_stretchy_ik(
-            start_bone=ik_start,
-            end_bone=ik_end,
-            stretch_control=ik_ctl.control_curve,
-            bind_chain=bind_chain
-        )
-
-    # 7. 隐藏驱动骨骼
-    if cmds.objExists(ik_root): cmds.setAttr(f"{ik_root}.visibility", 0)
-    if cmds.objExists(fk_root): cmds.setAttr(f"{fk_root}.visibility", 0)
-
-    return system
+    # 合并数据
+    system_data.update(ik_data)
+    system_data['bind_chain'] = bind_chain
+    return system_data

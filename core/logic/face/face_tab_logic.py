@@ -20,7 +20,7 @@ def create_locator(part, locator_type, name="", side=""):
     根据参数动态构建函数名并执行。
     """
     if not selection:
-        cmds.warning("MFace selection module not loaded.")
+        cmds.warning("MFace selection ik_label not loaded.")
         return
 
     # 组合 1: Selection + Part + Name + Type (最常见)
@@ -91,7 +91,7 @@ def run_build_all():
         except Exception as e:
             cmds.error(f"MFace Build Failed: {e}")
     else:
-        cmds.error("MFace 'build' module not found.")
+        cmds.error("MFace 'build' ik_label not found.")
 
 
 def update_second():
@@ -99,7 +99,7 @@ def update_second():
     合并驱动 / 更新次级控制器吸附。
     """
     if not actions:
-        cmds.warning("MFace 'actions' module not found.")
+        cmds.warning("MFace 'actions' ik_label not found.")
         return
 
     # 获取当前选中的面部模型

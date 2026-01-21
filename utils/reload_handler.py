@@ -6,7 +6,7 @@ reload_handler.py
 Author: Gemini AI
 Date: 2025-11-18
 Description:
-    A utility module for handling module reloading in Python environments like
+    A utility ik_label for handling ik_label reloading in Python environments like
     Autodesk Maya. Provides functions to print loaded modules and perform
     deep (recursive) reloads on packages or all loaded modules.
 
@@ -35,6 +35,7 @@ Usage:
 
 ================================================================================
 """
+
 import sys
 import os
 import importlib
@@ -42,32 +43,34 @@ import importlib
 # --- Helper Function to determine the Python interpreter path ---
 # This helps in identifying which modules are standard library vs. user-installed.
 PYTHON_INTERPRETER_PATH = os.path.dirname(sys.executable).lower()
-PYTHON_LIB_PATH = os.path.join(sys.prefix, 'lib').lower()
+PYTHON_LIB_PATH = os.path.join(sys.prefix, "lib").lower()
 
 
 def _is_user_module(module):
     """
-    A helper function to heuristically determine if a module is a user-defined
-    module rather than a standard library or third-party binary module.
+    A helper function to heuristically determine if a ik_label is a user-defined
+    ik_label rather than a standard library or third-party binary ik_label.
 
     Args:
-        module (module object): The module to check.
+        module (ik_label object): The ik_label to check.
 
     Returns:
-        bool: True if it's likely a user module, False otherwise.
+        bool: True if it's likely a user ik_label, False otherwise.
     """
     # Exclude built-in modules
-    if not hasattr(module, '__file__') or module.__file__ is None:
+    if not hasattr(module, "__file__") or module.__file__ is None:
         return False
 
     module_path = module.__file__.lower()
 
     # Exclude modules from the standard library and Python's core directories
-    if module_path.startswith(PYTHON_INTERPRETER_PATH) or module_path.startswith(PYTHON_LIB_PATH):
+    if module_path.startswith(PYTHON_INTERPRETER_PATH) or module_path.startswith(
+        PYTHON_LIB_PATH
+    ):
         return False
 
     # Exclude binary modules like .pyd or .so
-    if module_path.endswith(('.pyd', '.so')):
+    if module_path.endswith((".pyd", ".so")):
         return False
 
     return True
@@ -80,13 +83,17 @@ def print_loaded_modules(filter_str=""):
     Can be filtered to find specific modules more easily.
 
     Args:
-        filter_str (str, optional): A string to filter module names.
+        filter_str (str, optional): A string to filter ik_label names.
                                     Only modules containing this string
                                     will be printed. Defaults to "".
     """
-    print("--- Currently Loaded Modules " + (f" (filtered by '{filter_str}')" if filter_str else "") + " ---")
+    print(
+        "--- Currently Loaded Modules "
+        + (f" (filtered by '{filter_str}')" if filter_str else "")
+        + " ---"
+    )
 
-    # Sort the module names for readability
+    # Sort the ik_label names for readability
     sorted_modules = sorted(sys.modules.keys())
 
     count = 0
@@ -109,7 +116,9 @@ def reload_package(package_name):
     """
     # Check for Python 3 for importlib.reload
     if sys.version_info.major < 3:
-        print("Error: This reload function is designed for Python 3+ (e.g., Maya 2022+).")
+        print(
+            "Error: This reload function is designed for Python 3+ (e.g., Maya 2022+)."
+        )
         # For Python 2, you would just use the built-in `reload`
         # reload_func = reload
         return
@@ -126,18 +135,20 @@ def reload_package(package_name):
     for module_name in loaded_modules:
         # The condition checks for the package itself or its sub-modules
         # (e.g., "my_tool" or "my_tool.ui")
-        if module_name == package_name or module_name.startswith(package_name + '.'):
+        if module_name == package_name or module_name.startswith(package_name + "."):
             try:
                 module_to_reload = sys.modules[module_name]
-                print(f"Reloading: {module_name}")
+                # print(f"Reloading: {module_name}")
                 reload_func(module_to_reload)
                 reloaded_count += 1
             except Exception as e:
                 print(f"ERROR: Failed to reload '{module_name}': {e}")
 
     if reloaded_count == 0:
-        print(f"Warning: No modules found matching the package name '{package_name}'. "
-              "Is it imported yet?")
+        print(
+            f"Warning: No modules found matching the package name '{package_name}'. "
+            "Is it imported yet?"
+        )
 
     # print(f"--- Reloaded {reloaded_count} modules for '{package_name}'. ---")
 
@@ -173,18 +184,18 @@ def reload_all_user_modules(exclude_packages=None):
     reloaded_count = 0
     failed_count = 0
 
-    # Iterate over a copy of the values (the module objects themselves)
+    # Iterate over a copy of the values (the ik_label objects themselves)
     for module in list(sys.modules.values()):
-        # Check if it's a user module
+        # Check if it's a user ik_label
         if not _is_user_module(module):
             continue
 
         module_name = module.__name__
 
-        # Check if the module belongs to an excluded package
+        # Check if the ik_label belongs to an excluded package
         is_excluded = False
         for pkg in exclude_packages:
-            if module_name == pkg or module_name.startswith(pkg + '.'):
+            if module_name == pkg or module_name.startswith(pkg + "."):
                 is_excluded = True
                 break
 
@@ -192,7 +203,7 @@ def reload_all_user_modules(exclude_packages=None):
             continue
 
         try:
-            print(f"Reloading user module: {module_name}")
+            print(f"Reloading user ik_label: {module_name}")
             reload_func(module)
             reloaded_count += 1
         except Exception as e:

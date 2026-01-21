@@ -48,23 +48,27 @@ def create_stretchy_ik(
     """
     创建拉伸系统。
     """
-    # 1. 获取 IK 链条 (仅用于计算原始长度)
-    ik_chain = []
-    curr = end_bone
-    count = 0
-    while curr and count < 100:
-        ik_chain.append(curr)
-        if curr == start_bone: break
-        p = cmds.listRelatives(curr, p=True)
-        if p:
-            curr = p[0]
-        else:
-            break
-        count += 1
-    ik_chain.reverse()
+    # 1. 获取 IK 链条 (用于计算原始长度)
+    if bind_chain:
+        ik_chain = bind_chain
+    else:
+        # 回退到自动查找 (仅当没传 bind_chain 时)
+        ik_chain = []
+        curr = end_bone
+        count = 0
+        while curr and count < 100:
+            ik_chain.append(curr)
+            if curr == start_bone: break
+            p = cmds.listRelatives(curr, p=True)
+            if p:
+                curr = p[0]
+            else:
+                break
+            count += 1
+        ik_chain.reverse()
 
-    if not ik_chain or ik_chain[0] != start_bone:
-        return False
+        if not ik_chain or ik_chain[0] != start_bone:
+            return False
 
     # 2. 计算原始总长度
     original_length = 0.0
@@ -75,6 +79,8 @@ def create_stretchy_ik(
         return False
 
     # 3. 创建距离测量
+    # 注意: Locators 需要跟随 StartBone 和 Control
+    # start_bone 参数在这里作为 Locator 的约束目标
     start_loc = cmds.spaceLocator(n=f"{start_bone}_measure_start")[0]
     end_loc = cmds.spaceLocator(n=f"{end_bone}_measure_end")[0]
     cmds.hide(start_loc, end_loc)
@@ -100,10 +106,10 @@ def create_stretchy_ik(
     cmds.connectAttr(f"{ratio}.outputX", f"{cond}.colorIfTrueR")
     cmds.setAttr(f"{cond}.colorIfFalseR", 1.0)
 
-    # 6. 开关 Blend
+    # 6. 开关 Blend (改为 Bool 类型)
     attr = "Stretchy"
     if not cmds.attributeQuery(attr, node=stretch_control, exists=True):
-        cmds.addAttr(stretch_control, ln=attr, at='float', min=0, max=1, dv=1, k=True)
+        cmds.addAttr(stretch_control, ln=attr, at='bool', dv=1, k=True)
 
     blend = cmds.createNode('blendColors', n=f"{start_bone}_stretchy_blend")
     cmds.connectAttr(f"{stretch_control}.{attr}", f"{blend}.blender")

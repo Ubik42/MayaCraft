@@ -148,3 +148,30 @@ def clear_all_joint_labels():
             print(f"Error clearing label for {jnt}: {e}")
 
     print(f"已清理 {count} 个骨骼的标签信息。")
+
+
+def clear_all_custom_attributes():
+    """
+    遍历场景中所有骨骼，删除【所有】用户自定义属性。
+    """
+    all_joints = cmds.ls(type="joint")
+    if not all_joints:
+        cmds.warning("场景中没有骨骼。")
+        return
+
+    deleted_count = 0
+
+    for jnt in all_joints:
+        # 获取所有用户自定义的、可 key 的属性
+        user_attrs = cmds.listAttr(jnt, userDefined=True, keyable=True) or []
+
+        for attr in user_attrs:
+            try:
+                # 使用 deleteAttr 命令删除属性
+                cmds.deleteAttr(f"{jnt}.{attr}")
+                print(f"  -> 已删除属性: {jnt}.{attr}")
+                deleted_count += 1
+            except Exception as e:
+                print(f"删除属性失败: {jnt}.{attr} - {e}")
+
+    print(f"操作完成：共删除了 {deleted_count} 个自定义属性。")

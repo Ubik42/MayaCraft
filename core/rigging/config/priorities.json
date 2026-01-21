@@ -1,0 +1,16 @@
+{
+    "tasks": {
+        "task_structure": 0,
+        "task_instantiate": 5,
+        "attribute_inbetween_process": 6,
+        "task_build_joint": 10,
+        "task_base_fk": 15,
+        "module_ik_leg": 50,
+        "module_ik_arm": 50,
+        "attribute_twist": 30,
+        "attribute_seg_scale_comp": 30,
+        "attribute_bendy": 30,
+        "attribute_inbetween_post": 190,
+        "task_controller_set": 999
+    }
+}
