@@ -55,9 +55,6 @@ class InbetweenAttribute(RigObject):
 
         child_node = children[0]
 
-        child_short = tool.get_short_name(child_node)
-        node_short = tool.get_short_name(node)
-
         # Calculate Distance (Length)
         p_start = cmds.xform(node, q=True, t=True, ws=True)
         p_end = cmds.xform(child_node, q=True, t=True, ws=True)
@@ -90,10 +87,11 @@ class InbetweenAttribute(RigObject):
 
         cmds.parent(child_node, current_parent)
 
+        short_name = tool.get_short_name(node)
         self._processed_data = {
             "n": n_segments,
             "parts": parts,  # Source Parts
-            "short_name": node_short,  # Source Short Name
+            "short_name": short_name,  # Source Short Name
             "target_node": node,  # Source Node
         }
         print(
@@ -101,7 +99,8 @@ class InbetweenAttribute(RigObject):
         )
 
     def run_post_process(self):
-        """Setup connections. Drive FKOffsets of Deform parts."""
+        """用场景中名为FK_{source_short}_L和FK_{source_short}_R的控制器
+        让左侧控制器的X轴平均旋转驱动FKX_{source_short}_L的X轴以及data["parts"]里存储的inbetween骨骼的对应FKOffset_{骨骼名}_R组的X轴旋转"""
         if not self._processed_data:
             return
 
@@ -131,40 +130,6 @@ class InbetweenAttribute(RigObject):
             return
 
         for target_node in targets_to_process:
-            target_short = tool.get_short_name(target_node)
-
-            # 2. Setup Driver Attribute on Target
-            driver_attr = "inbetweenDriverRot"
-            if not cmds.attributeQuery(driver_attr, node=target_node, exists=True):
-                cmds.addAttr(target_node, ln=driver_attr, at="double3")
-                cmds.addAttr(
-                    target_node, ln=f"{driver_attr}X", at="doubleAngle", p=driver_attr
-                )
-                cmds.addAttr(
-                    target_node, ln=f"{driver_attr}Y", at="doubleAngle", p=driver_attr
-                )
-                cmds.addAttr(
-                    target_node, ln=f"{driver_attr}Z", at="doubleAngle", p=driver_attr
-                )
-
-            # Redirect Rotation
-            rot_x_plug = f"{target_node}.rotateX"
-            driver_x_plug = f"{target_node}.{driver_attr}X"
-
-            inputs = cmds.listConnections(
-                rot_x_plug, plugs=True, source=True, destination=False
-            )
-            # If already connected to driver, skip disconnect?
-            # Check connection
-            is_connected = False
-            if inputs:
-                if driver_x_plug in cmds.listConnections(inputs[0], plugs=True) or []:
-                    is_connected = True
-
-            if inputs and not is_connected:
-                source_plug = inputs[0]
-                cmds.disconnectAttr(source_plug, rot_x_plug)
-                cmds.connectAttr(source_plug, driver_x_plug, force=True)
 
             # Create Math Node
             md_node = cmds.createNode(
@@ -175,30 +140,7 @@ class InbetweenAttribute(RigObject):
 
             factor = 1.0 / n
             cmds.setAttr(f"{md_node}.input2X", factor)
-
-            # Drive Target Rotate X (The Bone itself)
-            # Note: If FK is driving DriverAttr, and we drive RotateX, we are creating loop?
-            # No, DriverAttr is Input (from FK Ctrl). RotateX is Output (to Bone).
-            # So FK Ctrl -> DriverAttr -> Multiply -> RotateX.
-            # This means the Bone rotates 1/N of the Ctrl?
-            # Wait. "保持对原有FKX骨骼的控制" (Maintain control of original FKX bone).
-            # Original FKX bone usually follows Ctrl 1:1.
-            # If we intercept, we change that.
-            # "同时增加对inbeteen分段骨骼对应的offset组的驱动"
-            # If original bone rotates 1/N, then it behaves like Part0?
-            # Usually yes.
             cmds.connectAttr(f"{md_node}.outputX", f"{target_node}.rotateX", force=True)
-
-            # 3. Find and Drive Parts
-            # We need to find the Deform parts corresponding to this target side.
-            # We have source_parts list.
-            # We need to map Source Part -> Deform Part (Side specific).
-
-            # Helper: Infer Part Name
-            # Source: Hip_Part1
-            # Deform R: Hip_Part1_R
-            # Deform L: Hip_Part1_L
-            # Naming convention is pretty standard if built by `build_joint`.
 
             side_suffix = ""
             if target_node.endswith("_R"):
