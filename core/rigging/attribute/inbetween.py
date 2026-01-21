@@ -104,9 +104,9 @@ class InbetweenAttribute(RigObject):
 
     def run_post_process(self):
         """
-        基于严格命名规则连接属性：
-        Driver: FK_{source}{side}.rotateX
-        Driven: FKX_{source}{side}.rotateX, FKOffset_{part}{side}.rotateX
+        基于严格命名规则连接属性 (无侧边推断逻辑)：
+        Driver: FK_{source_short}.rotateX
+        Driven: FKX_{source_short}.rotateX, FKOffset_{part_short}.rotateX
         """
         if not self._processed_data:
             return
@@ -114,41 +114,41 @@ class InbetweenAttribute(RigObject):
         data = self._processed_data
         n = data["n"]
         source_parts = data["parts"]
-        source_short = data["short_name"]
+        source_short = data["short_name"]  # 假定此处已包含侧边，如 "Hip_L"
 
-        # 强制遍历左右侧
-        for side in ["_L", "_R"]:
-            fk_ctrl = f"FK_{source_short}{side}"
+        # 1. 查找驱动控制器
+        fk_ctrl = f"FK_{source_short}"
 
-            if not cmds.objExists(fk_ctrl):
-                continue
+        if not cmds.objExists(fk_ctrl):
+            print(f"[Inbetween] Warning: Driver Controller {fk_ctrl} not found.")
+            return
 
-            # 创建平均值计算节点
-            md_node = cmds.createNode("multiplyDivide", name=f"Inbetween_Div_{source_short}{side}")
-            cmds.setAttr(f"{md_node}.operation", 1)  # Multiply
-            cmds.setAttr(f"{md_node}.input2X", 1.0 / n)  # 平均系数
+        # 2. 创建平均值计算节点
+        md_node = cmds.createNode("multiplyDivide", name=f"Inbetween_Div_{source_short}")
+        cmds.setAttr(f"{md_node}.operation", 1)  # Multiply
+        cmds.setAttr(f"{md_node}.input2X", 1.0 / n)  # 平均系数
 
-            # 连接控制器
-            cmds.connectAttr(f"{fk_ctrl}.rotateX", f"{md_node}.input1X", force=True)
+        # 连接控制器输入
+        cmds.connectAttr(f"{fk_ctrl}.rotateX", f"{md_node}.input1X", force=True)
 
-            # 1. 驱动主 FKX 骨骼
-            fkx_bone = f"FKX_{source_short}{side}"
-            if cmds.objExists(fkx_bone):
-                cmds.connectAttr(f"{md_node}.outputX", f"{fkx_bone}.rotateX", force=True)
+        # 3. 驱动主 FKX 骨骼
+        fkx_bone = f"FKX_{source_short}"
+        if cmds.objExists(fkx_bone):
+            cmds.connectAttr(f"{md_node}.outputX", f"{fkx_bone}.rotateX", force=True)
+        else:
+            print(f"[Inbetween] Warning: Target {fkx_bone} not found.")
+
+        # 4. 驱动分段骨骼的 Offset 组
+        for part in source_parts:
+            part_short = tool.get_short_name(part)  # e.g. "Hip_L_Part1"
+            fk_offset_grp = f"FKOffset_{part_short}"
+
+            if cmds.objExists(fk_offset_grp):
+                cmds.connectAttr(f"{md_node}.outputX", f"{fk_offset_grp}.rotateX", force=True)
             else:
-                print(f"[Inbetween] Warning: Target {fkx_bone} not found.")
+                print(f"[Inbetween] Warning: Offset {fk_offset_grp} not found.")
 
-            # 2. 驱动分段骨骼的 Offset 组
-            for part in source_parts:
-                part_short = tool.get_short_name(part)  # e.g. Hip_Part1
-                fk_offset_grp = f"FKOffset_{part_short}{side}"
-
-                if cmds.objExists(fk_offset_grp):
-                    cmds.connectAttr(f"{md_node}.outputX", f"{fk_offset_grp}.rotateX", force=True)
-                else:
-                    print(f"[Inbetween] Warning: Offset {fk_offset_grp} not found.")
-
-        print(f"[Inbetween] Setup Redirection (RotX Only) for {source_short} sides.")
+        print(f"[Inbetween] Setup Redirection (RotX Only) for {source_short}.")
 
     @staticmethod
     def add_to(node: str) -> bool:

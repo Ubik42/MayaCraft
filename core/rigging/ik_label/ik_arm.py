@@ -130,7 +130,7 @@ class IKArmModule(RigObject):
             cmds.scaleConstraint(connect_target, hook_parent_name, maintainOffset=True)
 
         # Connect Module Root to Hook
-        arm_root_grp = f"grp_{start_jnt_short}_fk_ctrl"
+        arm_root_grp = f"FKOffset_{start_jnt_short}"
         if cmds.objExists(arm_root_grp):
             tool.safe_parent(arm_root_grp, hook_parent_name)
         else:

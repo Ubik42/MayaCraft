@@ -34,5 +34,5 @@ def create_module(label_type, builder, mapping_data):
     if module_class:
         return module_class(builder, mapping_data)
     else:
-        print(f"[Module Factory] Warning: Module class not found for '{label_type}'")
+        # print(f"[Module Factory] Warning: Module class not found for '{label_type}'")
         return None

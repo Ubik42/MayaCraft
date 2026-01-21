@@ -26,8 +26,28 @@ class RigBuilder:  # Mixin/Inherit RigTask for get_priority helper? Or just add 
 
     def __init__(self):
 
-        #暂时还是需要放在这
-        self.groups = {}
+        #暂时还是需要放在这，不然buildfk报错
+        self.groups = {
+        "main": "Group",
+        "geo": "Geometry_Grp",
+        "ctrl": "Controls_Grp",
+        "main_sys": "MainSystem",
+        "root_sys": "RootSystem",
+        "global_sys": "GlobalSystem",
+        "fk_sys": "FKSystem",
+        "ik_sys": "IKSystem",
+        "ik_joints": "IKJoints",
+        "ik_handle": "IKHandle",
+        "ik_pv": "IKPoleVector",
+        "fkik_sys": "FKIKSystem",
+        "driving_sys": "DrivingSystem",
+        "aim_sys": "AimSystem",
+        "bend_sys": "BendSystem",
+        "twist_sys": "TwistSystem",
+        "constraint_sys": "ConstraintSystem",
+        "dynamic_sys": "DynamicSystem",
+        "build_pose": "buildPose",
+        }
 
         # 存储运行时数据
         self.active_modules = []
@@ -37,8 +57,6 @@ class RigBuilder:  # Mixin/Inherit RigTask for get_priority helper? Or just add 
         self.task_queue = []
         self.ui_config_ref = None  # 前端传来的原始数据
         self.processed_config = {} # 处理骨骼后的数据
-        #TODO 这个弱智功能后面要完全去掉,模块重新整理后不需要任何映射
-        self.node_map = {}  # Source (Short) -> Deform (Long) map
 
 
     # --- 核心构建流 ---
@@ -131,6 +149,9 @@ class RigBuilder:  # Mixin/Inherit RigTask for get_priority helper? Or just add 
         config_source = (
             self.processed_config if self.processed_config else self.ui_config_ref
         )
+
+        #TODO 传入的数据不做区分，浪费效率且要求不能重名
+        print("config_source",config_source)
 
         if config_source:
             for label_name, instances_list in config_source.items():
