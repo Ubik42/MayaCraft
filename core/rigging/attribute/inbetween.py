@@ -99,96 +99,52 @@ class InbetweenAttribute(RigObject):
         )
 
     def run_post_process(self):
-        """用场景中名为FK_{source_short}_L和FK_{source_short}_R的控制器
-        让左侧控制器的X轴平均旋转驱动FKX_{source_short}_L的X轴以及data["parts"]里存储的inbetween骨骼的对应FKOffset_{骨骼名}_R组的X轴旋转"""
+        """
+        基于严格命名规则连接属性：
+        Driver: FK_{source}{side}.rotateX
+        Driven: FKX_{source}{side}.rotateX, FKOffset_{part}{side}.rotateX
+        """
         if not self._processed_data:
             return
 
         data = self._processed_data
-        source_target_node = data["target_node"]
         n = data["n"]
-        source_parts = data["parts"]  # List of Source Part Joints
+        source_parts = data["parts"]
         source_short = data["short_name"]
-        deform_primary = self.builder.find_deform_node(source_target_node)
 
-        targets_to_process = []  # List of real deform nodes to set up
+        # 强制遍历左右侧
+        for side in ["_L", "_R"]:
+            fk_ctrl = f"FK_{source_short}{side}"
 
-        if deform_primary and cmds.objExists(deform_primary):
-            targets_to_process.append(deform_primary)
+            if not cmds.objExists(fk_ctrl):
+                continue
 
-            # Check for Mirror (L side)
-            if deform_primary.endswith("_R"):
-                deform_l = deform_primary.replace("_R", "_L")
-                if cmds.objExists(deform_l):
-                    targets_to_process.append(deform_l)
-            # TODO If _M, no mirror usually.
-
-        if not targets_to_process:
-            print(
-                f"[Inbetween] Warning: Could not find deform/mirrored nodes for {source_short}"
-            )
-            return
-
-        for target_node in targets_to_process:
-
-            # Create Math Node
-            md_node = cmds.createNode(
-                "multiplyDivide", name=f"Inbetween_Div_{target_short}"
-            )
+            # 创建平均值计算节点
+            md_node = cmds.createNode("multiplyDivide", name=f"Inbetween_Div_{source_short}{side}")
             cmds.setAttr(f"{md_node}.operation", 1)  # Multiply
-            cmds.connectAttr(f"{target_node}.{driver_attr}X", f"{md_node}.input1X")
+            cmds.setAttr(f"{md_node}.input2X", 1.0 / n)  # 平均系数
 
-            factor = 1.0 / n
-            cmds.setAttr(f"{md_node}.input2X", factor)
-            cmds.connectAttr(f"{md_node}.outputX", f"{target_node}.rotateX", force=True)
+            # 连接控制器
+            cmds.connectAttr(f"{fk_ctrl}.rotateX", f"{md_node}.input1X", force=True)
 
-            side_suffix = ""
-            if target_node.endswith("_R"):
-                side_suffix = "_R"
-            elif target_node.endswith("_L"):
-                side_suffix = "_L"
-            elif target_node.endswith("_M"):
-                side_suffix = "_M"
+            # 1. 驱动主 FKX 骨骼
+            fkx_bone = f"FKX_{source_short}{side}"
+            if cmds.objExists(fkx_bone):
+                cmds.connectAttr(f"{md_node}.outputX", f"{fkx_bone}.rotateX", force=True)
+            else:
+                print(f"[Inbetween] Warning: Target {fkx_bone} not found.")
 
-            for source_part in source_parts:
-                source_part_short = tool.get_short_name(source_part)
-                # If we have node_map, we can try to use it.
-                # But node_map key is source short name.
-                mapped_primary = self.builder.node_map.get(
-                    source_part_short, source_part_short
-                )
+            # 2. 驱动分段骨骼的 Offset 组
+            for part in source_parts:
+                part_short = tool.get_short_name(part)  # e.g. Hip_Part1
+                fk_offset_grp = f"FKOffset_{part_short}{side}"
 
-                # Derive specific side name
-                # If mapped_primary is "Hip_Part1_R" and we are processing L side.
-                target_part_name = mapped_primary
-                if side_suffix == "_L" and mapped_primary.endswith("_R"):
-                    target_part_name = mapped_primary.replace("_R", "_L")
-                elif side_suffix == "_R" and mapped_primary.endswith(
-                    "_L"
-                ):  # Rare but possible
-                    target_part_name = mapped_primary.replace("_L", "_R")
-
-                # Now find the FK Offset.
-                # If FK built successfully, there should be "FKOffset_{PartName}".
-                # Part Name is target_part_name (short).
-                target_part_short = target_part_name.split("|")[-1]
-                fk_offset = f"FKOffset_{target_part_short}"
-
-                if cmds.objExists(fk_offset):
-                    # Drive it!
-                    cmds.connectAttr(
-                        f"{md_node}.outputX", f"{fk_offset}.rotateX", force=True
-                    )
+                if cmds.objExists(fk_offset_grp):
+                    cmds.connectAttr(f"{md_node}.outputX", f"{fk_offset_grp}.rotateX", force=True)
                 else:
-                    # Warn?
-                    # If FK skipped it (e.g. if we messed up), this will fail.
-                    print(
-                        f"  [Inbetween] Warning: FKOffset not found for {target_part_short} ({fk_offset})"
-                    )
+                    print(f"[Inbetween] Warning: Offset {fk_offset_grp} not found.")
 
-        print(
-            f"  [Inbetween] Setup Redirection (RotX Only) for {source_short} and mirrors."
-        )
+        print(f"[Inbetween] Setup Redirection (RotX Only) for {source_short} sides.")
 
     @staticmethod
     def add_to(node: str) -> bool:
