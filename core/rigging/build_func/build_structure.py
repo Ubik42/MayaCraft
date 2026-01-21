@@ -4,30 +4,47 @@
 import maya.cmds as cmds
 from core import tool
 
-def build_scene_structure(groups: dict):
+
+def build_scene_structure():
     """建立完整的场景组结构"""
-    # 1. Main Group
-    if not cmds.objExists(groups["main"]):
-        cmds.createNode("transform", name=groups["main"])
 
-    for key in ["geo", "ctrl"]:
-        grp_name = groups[key]
-        if not cmds.objExists(grp_name):
-            cmds.createNode("transform", name=grp_name)
-        tool.safe_parent(grp_name, groups["main"])
+    # --- 1. 顶层结构 ---
+    # 既然名字都定死了，直接用字符串
+    if not cmds.objExists("Group"):
+        cmds.createNode("transform", name="Group")
 
-    ctrl_grp = groups["ctrl"]
-    special_keys = ["main", "geo", "ctrl", "ik_joints", "ik_handle", "ik_pv"]
-    
-    for key, grp_name in groups.items():
-        if key in special_keys: continue
-        if not cmds.objExists(grp_name):
-            cmds.createNode("transform", name=grp_name)
-        tool.safe_parent(grp_name, ctrl_grp)
-        
-    ik_sys = groups["ik_sys"]
-    for key in ["ik_joints", "ik_handle", "ik_pv"]:
-        grp_name = groups[key]
-        if not cmds.objExists(grp_name):
-            cmds.createNode("transform", name=grp_name)
-        tool.safe_parent(grp_name, ik_sys)
+    # --- 2. 第二层级 (Geo & Ctrl) ---
+    for name in ["Geometry_Grp", "Controls_Grp"]:
+        if not cmds.objExists(name):
+            cmds.createNode("transform", name=name)
+        tool.safe_parent(name, "Group")
+
+    # --- 3. 系统组 (全部都在 Controls_Grp 下面) ---
+    system_list = [
+        "MainSystem",
+        "RootSystem",
+        "GlobalSystem",
+        "FKSystem",
+        "IKSystem",
+        "FKIKSystem",
+        "DrivingSystem",
+        "AimSystem",
+        "BendSystem",
+        "TwistSystem",
+        "ConstraintSystem",
+        "DynamicSystem",
+        "buildPose"
+    ]
+
+    for name in system_list:
+        if not cmds.objExists(name):
+            cmds.createNode("transform", name=name)
+        tool.safe_parent(name, "Controls_Grp")
+
+    # --- 4. IK 子结构 (在 IKSystem 下面) ---
+    ik_sub_list = ["IKJoints", "IKHandle", "IKPoleVector"]
+
+    for name in ik_sub_list:
+        if not cmds.objExists(name):
+            cmds.createNode("transform", name=name)
+        tool.safe_parent(name, "IKSystem")

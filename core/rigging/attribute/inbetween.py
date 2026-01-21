@@ -37,6 +37,9 @@ class InbetweenAttribute(RigObject):
     def run_process_nodes(self):
         """Split joints along the vector length (X-axis relative)."""
         node = self.mapping.get("inbetween")
+        short_name = tool.get_short_name(node)
+        
+
         if not node or not cmds.objExists(node):
             return
 
@@ -47,6 +50,7 @@ class InbetweenAttribute(RigObject):
         if n_segments <= 1:
             return
 
+
         # Check children
         children = cmds.listRelatives(node, children=True, type="joint", fullPath=True)
         if not children:
@@ -56,6 +60,7 @@ class InbetweenAttribute(RigObject):
         child_node = children[0]
 
         # Calculate Distance (Length)
+        # TODO 要求之前骨骼有批量朝向子骨骼过
         p_start = cmds.xform(node, q=True, t=True, ws=True)
         p_end = cmds.xform(child_node, q=True, t=True, ws=True)
 
@@ -87,7 +92,6 @@ class InbetweenAttribute(RigObject):
 
         cmds.parent(child_node, current_parent)
 
-        short_name = tool.get_short_name(node)
         self._processed_data = {
             "n": n_segments,
             "parts": parts,  # Source Parts

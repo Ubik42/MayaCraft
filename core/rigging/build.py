@@ -25,7 +25,7 @@ class RigBuilder:  # Mixin/Inherit RigTask for get_priority helper? Or just add 
         return PriorityConfig.get(key, default)
 
     def __init__(self):
-        # 1. 定义标准组结构配置
+        # TODO 这个其实最好移动到build_structure
         self.groups = {
             "main": "Group",
             "geo": "Geometry_Grp",
@@ -55,15 +55,11 @@ class RigBuilder:  # Mixin/Inherit RigTask for get_priority helper? Or just add 
         # 任务队列
         self.task_queue = []
         self.processed_config = {}
+        #TODO 这个弱智功能后面要完全去掉
         self.node_map = {}  # Source (Short) -> Deform (Long) map
+        # TODO 这几个干嘛的
         self.ui_config_ref = None  # Store reference to UI config
 
-    def find_deform_node(self, source_node: str) -> str:
-        """Looks up the deform node from a source node name."""
-        if not source_node:
-            return None
-        short_name = source_node.split("|")[-1]
-        return self.node_map.get(short_name, short_name)
 
     # --- 核心构建流 ---
 
@@ -81,12 +77,12 @@ class RigBuilder:  # Mixin/Inherit RigTask for get_priority helper? Or just add 
         self.task_queue.append(
             RigTask(
                 self.get_priority("task_structure", 0),
-                partial(build_structure.build_scene_structure, self.groups),
+                build_structure.build_scene_structure,
                 "Setup Scene Structure",
             )
         )
 
-        # 2. 实例化 RigObject 并收集任务 (EARLY: Priority 3)
+        # 2. 实例化 RigObject 并收集任务
         self.task_queue.append(
             RigTask(
                 self.get_priority("task_instantiate", 5),
@@ -104,7 +100,7 @@ class RigBuilder:  # Mixin/Inherit RigTask for get_priority helper? Or just add 
             )
         )
 
-        # 4. Base FK
+        # 4. Base FK系统
         self.task_queue.append(
             RigTask(
                 self.get_priority("task_base_fk", 15),
@@ -125,6 +121,7 @@ class RigBuilder:  # Mixin/Inherit RigTask for get_priority helper? Or just add 
         # 执行循环
         executed_count = 0
         while self.task_queue:
+            #健壮但是没效率的写法
             self.task_queue.sort(key=lambda t: t.priority)
             current_task = self.task_queue.pop(0)
 
@@ -144,7 +141,7 @@ class RigBuilder:  # Mixin/Inherit RigTask for get_priority helper? Or just add 
     # --- 动态任务生成，生成类实例传参方法不一样，生成后收集任务方法一样的 ---
 
     def _task_instantiate_and_collect(self):
-        """Priority 40: 实例化模块和属性，并请求它们的任务"""
+        """实例化模块和属性，并请求它们的任务"""
         print(">>> Instantiating Rig Objects...")
 
         # 1. Instantiate Modules & Attributes

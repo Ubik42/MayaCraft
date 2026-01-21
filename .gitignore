@@ -1,0 +1,8 @@
+# 忽略所有以点开头的文件和文件夹 (.env, .vscode, .DS_Store 等)
+.*
+
+# 忽略所有以我们要下划线开头的文件和文件夹 (_drafts, _backup 等)
+_*
+
+# 【重要】保留 .gitignore 文件本身，否则它也会被忽略
+!.gitignore
