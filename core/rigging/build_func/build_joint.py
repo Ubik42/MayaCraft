@@ -48,101 +48,108 @@ def process_skeleton(builder, ui_config: dict):
         except:
             pass
 
-    # 4. 建立映射并处理命名/镜像
+    # 4. 处理命名 (_M/_R) 和 镜像准备
+    # 获取层级列表 (full path)
     orig_hierarchy = _get_hierarchy_list(original_root)
     deform_hierarchy = _get_hierarchy_list(deform_root)
-    full_path_map = dict(zip(orig_hierarchy, deform_hierarchy))
 
-    # Store initial map (before rename) - Update later?
-    # Actually renaming changes deform names, so we should map AFTER rename.
-    # But full_path_map relies on structure matching NOW.
-    # We will build a 'source_short' -> 'deform_long/short' map.
-    builder.node_map = {}  # Clear/Init
-
+    # 识别需要镜像的分支根节点 (基于原始骨骼名字包含 scapula 或 hip)
     deform_mirror_roots = []
-    mirror_root_short_names = []
     mirror_keywords = ["scapula", "hip"]
 
-    for orig_full, deform_full in full_path_map.items():
-        orig_short = orig_full.split("|")[-1]
-        orig_short_lower = orig_short.lower()
+    # 预先扫描找出镜像根节点在 Deform 层级中的路径
+    for orig_full, deform_full in zip(orig_hierarchy, deform_hierarchy):
+        orig_short = orig_full.split("|")[-1].lower()
         for kw in mirror_keywords:
-            if kw in orig_short_lower:
+            if kw in orig_short:
                 deform_mirror_roots.append(deform_full)
-                mirror_root_short_names.append(orig_short)
                 break
 
+    # 用于 Config 转换的局部映射表 (Short Name -> New Deform Name)
     short_name_map = {}
-    for orig_full, deform_full in zip(
-        reversed(orig_hierarchy), reversed(deform_hierarchy)
-    ):
+
+    # 倒序遍历进行重命名 (防止重命名父级后子级路径失效，虽然 deform_hierarchy 存的是快照)
+    for orig_full, deform_full in zip(reversed(orig_hierarchy), reversed(deform_hierarchy)):
+        # 判断当前节点是否属于右侧 (即路径中是否包含镜像根节点)
         is_right_side = False
         for root_path in deform_mirror_roots:
             if root_path in deform_full:
                 is_right_side = True
                 break
+
         suffix = "_R" if is_right_side else "_M"
+
+        # 获取原始短名并重命名新节点
         orig_short = orig_full.split("|")[-1]
         new_name = f"{orig_short}{suffix}"
-        renamed_node = cmds.rename(deform_full, new_name)
-        short_name_map[orig_short] = renamed_node
 
-        # [NEW] Store in Node Map
-        builder.node_map[orig_short] = (
-            renamed_node  # Store Short Source -> Short Deform (Renamed)
-        )
+        # 执行重命名
+        renamed_node = cmds.rename(deform_full, new_name)
+
+        # 记录映射供 Config 转换使用
+        short_name_map[orig_short] = renamed_node
 
         tool.unlock_transform(renamed_node)
 
-    # [FIX] Update deform_root to new name so subsequent operations find it
+    # 更新 deform_root 变量为重命名后的名字
     orig_root_short = original_root.split("|")[-1]
     if orig_root_short in short_name_map:
         deform_root = short_name_map[orig_root_short]
 
-    processed_mirror_roots = []
-    for orig_short in mirror_root_short_names:
-        if orig_short in short_name_map:
-            r_node = short_name_map[orig_short]
-            if r_node.endswith("_R") and r_node not in processed_mirror_roots:
-                processed_mirror_roots.append(r_node)
+    # 执行镜像 (_R -> _L)
+    # 只需要对名字以 _R 结尾且是镜像根节点的对应的当前节点执行镜像
+    for orig_full, deform_full in zip(orig_hierarchy, deform_hierarchy):
+        orig_short = orig_full.split("|")[-1]
+        # 检查这是否是一个镜像分支的根
+        # 注意：这里需要用原始名字判断是否是 keyword 节点，用 short_name_map 获取当前名字
+        is_mirror_root_node = any(kw in orig_short.lower() for kw in mirror_keywords)
 
-    for r_root in processed_mirror_roots:
-        if cmds.objExists(r_root):
-            print(f"  [JointBuilder] Mirroring Branch: {r_root}")
-            cmds.mirrorJoint(
-                r_root, mirrorYZ=True, mirrorBehavior=True, searchReplace=("_R", "_L")
-            )
+        if is_mirror_root_node and orig_short in short_name_map:
+            current_node = short_name_map[orig_short]
+            if current_node.endswith("_R") and cmds.objExists(current_node):
+                print(f"  [JointBuilder] Mirroring Branch: {current_node}")
+                cmds.mirrorJoint(
+                    current_node,
+                    mirrorYZ=True,
+                    mirrorBehavior=True,
+                    searchReplace=("_R", "_L")
+                )
 
-    # 5. 重组构建配置
+    # 5. 重组构建配置 (将 UI 配置的原始骨骼映射到新的 Deform 骨骼)
     new_config = {}
     if ui_config:
         for mod_name, instances in ui_config.items():
             new_instances = []
             for inst in instances:
-                inst_r_m, inst_l = {}, {}
+                inst_r_m = {}  # 存放 _R 或 _M
+                inst_l = {}  # 存放 _L
                 has_l = False
+
                 for key, orig_long in inst.items():
                     orig_short = orig_long.split("|")[-1]
+
                     if orig_short in short_name_map:
                         new_name = short_name_map[orig_short]
                         inst_r_m[key] = new_name
+
+                        # 如果是右侧，尝试查找对应的左侧骨骼
                         if new_name.endswith("_R"):
                             l_name = new_name.replace("_R", "_L")
                             if cmds.objExists(l_name):
                                 inst_l[key] = l_name
                                 has_l = True
+
                 if inst_r_m:
                     new_instances.append(inst_r_m)
                 if has_l and inst_l:
                     new_instances.append(inst_l)
+
             new_config[mod_name] = new_instances
 
     # --- Store Result in Builder ---
     builder.processed_config = new_config
 
     print(">>> [JointBuilder] Skeleton processed successfully.")
-
-    pass
 
 
 # --- 辅助函数 ---

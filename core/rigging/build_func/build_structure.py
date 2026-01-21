@@ -6,7 +6,7 @@ from core import tool
 from core.rigging import build
 
 
-def build_scene_structure():
+def build_scene_structure(builder):
     """建立完整的场景组结构"""
 
     # --- 1. 顶层结构 ---
@@ -50,4 +50,25 @@ def build_scene_structure():
             cmds.createNode("transform", name=name)
         tool.safe_parent(name, "IKSystem")
 
+    builder.groups = {
+        "main": "Group",
+        "geo": "Geometry_Grp",
+        "ctrl": "Controls_Grp",
+        "main_sys": "MainSystem",
+        "root_sys": "RootSystem",
+        "global_sys": "GlobalSystem",
+        "fk_sys": "FKSystem",
+        "ik_sys": "IKSystem",
+        "ik_joints": "IKJoints",
+        "ik_handle": "IKHandle",
+        "ik_pv": "IKPoleVector",
+        "fkik_sys": "FKIKSystem",
+        "driving_sys": "DrivingSystem",
+        "aim_sys": "AimSystem",
+        "bend_sys": "BendSystem",
+        "twist_sys": "TwistSystem",
+        "constraint_sys": "ConstraintSystem",
+        "dynamic_sys": "DynamicSystem",
+        "build_pose": "buildPose",
+    }
 
