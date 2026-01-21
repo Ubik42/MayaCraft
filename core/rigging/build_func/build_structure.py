@@ -3,6 +3,7 @@
 
 import maya.cmds as cmds
 from core import tool
+from core.rigging import build
 
 
 def build_scene_structure():
@@ -48,3 +49,5 @@ def build_scene_structure():
         if not cmds.objExists(name):
             cmds.createNode("transform", name=name)
         tool.safe_parent(name, "IKSystem")
+
+

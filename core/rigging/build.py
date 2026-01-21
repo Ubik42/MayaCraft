@@ -25,7 +25,9 @@ class RigBuilder:  # Mixin/Inherit RigTask for get_priority helper? Or just add 
         return PriorityConfig.get(key, default)
 
     def __init__(self):
-        # TODO 这个其实最好移动到build_structure
+
+        #暂时还是需要放在这
+        self.groups = {}
         self.groups = {
             "main": "Group",
             "geo": "Geometry_Grp",
@@ -54,11 +56,10 @@ class RigBuilder:  # Mixin/Inherit RigTask for get_priority helper? Or just add 
 
         # 任务队列
         self.task_queue = []
-        self.processed_config = {}
+        self.ui_config_ref = None  # 前端传来的原始数据
+        self.processed_config = {} # 处理骨骼后的数据
         #TODO 这个弱智功能后面要完全去掉
         self.node_map = {}  # Source (Short) -> Deform (Long) map
-        # TODO 这几个干嘛的
-        self.ui_config_ref = None  # Store reference to UI config
 
 
     # --- 核心构建流 ---

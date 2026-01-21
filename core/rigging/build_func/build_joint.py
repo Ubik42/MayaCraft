@@ -14,11 +14,9 @@ def process_skeleton(builder, ui_config: dict):
     2. 重命名 (_M, _R)
     3. 镜像 (_R -> _L)
     4. 生成适配新骨骼的构建配置
+    #TODO 去掉这个垃圾功能
     5. [NEW] Store Source->Deform Mapping in builder.node_map for cross-referencing.
-
-    * 直接修改 builder.processed_config，不返回数据。
     """
-    print(">>> [JointBuilder] Processing Skeleton...")
 
     groups = builder.groups
 
@@ -43,8 +41,6 @@ def process_skeleton(builder, ui_config: dict):
     all_assemblies = cmds.ls(assemblies=True)
     for node in all_assemblies:
         if node == main_grp:
-            continue
-        if node in ["persp", "top", "front", "side"]:
             continue
         try:
             tool.unlock_transform(node, visibility=True)
@@ -146,25 +142,6 @@ def process_skeleton(builder, ui_config: dict):
 
     print(">>> [JointBuilder] Skeleton processed successfully.")
 
-    # [NEW] Finalize Node Map with mirrored joints
-    # The short_name_map contains keys from SOURCE skeleton (which is singular side usually).
-    # But mirroring created new joints (_L) that might not be in SOURCE map if SOURCE is asymmetric or user config only has one side?
-    # Actually, process_skeleton mirrors the Deform skeleton. The Config logic below handles mapping config side L.
-    # We should ensure node_map covers L side if referenced.
-    # The config logic iterates 'inst' and generates 'inst_l'.
-    # We can rely on standard naming convention for finding L side from R side map.
-    # For now, short_name_map covers the main hierarchy processed.
-
-    # Update node_map with L side if possible?
-    # If Source has 'Hand_R', map has 'Hand_R' -> 'Hand_R' (Deform).
-    # Mirror creates 'Hand_L'.
-    # Does Source have 'Hand_L'?
-    # If Source is FitSkeleton, usually it has both sides or just left?
-    # If Source has 'Hand_L', it was in `orig_hierarchy`?
-    # If the user modeled a full skeleton, `orig_hierarchy` has both sides.
-    # Then `full_path_map` covers both.
-    # Then `short_name_map` covers both.
-    # So `builder.node_map` covers both. Use it.
     pass
 
 
@@ -179,7 +156,6 @@ def _find_original_root(ui_config):
     if ui_config and "IK Spine" in ui_config:
         for inst in ui_config["IK Spine"]:
             if "Root" in inst and cmds.objExists(inst["Root"]):
-                print("[JointBuilder] Found Root via UI Config.")
                 return inst["Root"]
 
     # 2. (次高优先级) 如果 UI 配置为空，尝试寻找 FitSkeleton 下的骨骼
@@ -189,7 +165,6 @@ def _find_original_root(ui_config):
                 "FitSkeleton", children=True, type="joint", fullPath=True
             )
             if children:
-                print("[JointBuilder] Found Root under FitSkeleton.")
                 return children[0]
 
     # 3. (备选) 尝试从场景标签查找
