@@ -4,7 +4,7 @@
 from PySide6 import QtWidgets, QtCore, QtGui
 from maya import cmds
 
-# Backend Logic
+# Backend Logic (Will be updated later)
 from core.logic.rigging import build_widget_logic as logic
 from core.rigging import build
 from ui.collapsible_widget import CollapsibleWidget
@@ -19,7 +19,11 @@ ATTR_LIST = attribute_pkg.get_all_slot_names()
 
 
 class SlotButton(QtWidgets.QPushButton):
-    """Custom Slot Button"""
+    """
+    Custom Slot Button with Double Click support.
+    """
+    # Signal: Emits self when double clicked
+    double_clicked = QtCore.Signal(object)
 
     def __init__(self, label_name, is_attribute=False, parent=None):
         super().__init__(parent)
@@ -34,41 +38,54 @@ class SlotButton(QtWidgets.QPushButton):
         self.setCursor(QtCore.Qt.PointingHandCursor)
 
         self.base_style = "border-radius: 4px; font-weight: bold; text-align: left; padding-left: 10px;"
-        self.is_active = False
+        # Allow text to elide if too long
         self.update_appearance()
+
+    def mouseDoubleClickEvent(self, event):
+        """Override to handle double click."""
+        if event.button() == QtCore.Qt.LeftButton:
+            self.double_clicked.emit(self)
+        super().mouseDoubleClickEvent(event)
 
     def update_appearance(self):
-        if self.is_attribute:
-            if self.assigned_node:
-                self.setText(self.assigned_node.split("|")[-1])
+        text = ""
+        if self.assigned_node:
+            short_node = self.assigned_node.split("|")[-1]
+            if self.is_attribute:
+                text = short_node
             else:
-                self.setText("")
+                text = f"{self.label_name}:  {short_node}"
         else:
-            if self.assigned_node:
-                self.setText(f"{self.label_name}:  {self.assigned_node.split('|')[-1]}")
-            else:
-                self.setText(self.label_name)
+            text = self.label_name if not self.is_attribute else self.label_name
 
+        self.setText(text)
+
+        # Style Logic
         color_empty_bg = "#454545"
-        color_filled_bg = "#2E7D32"
-        color_active_border = "#4FC3F7"
-        style_sheet = "QPushButton {" + self.base_style
-        if self.assigned_node:
-            style_sheet += f"background-color: {color_filled_bg}; color: #FFF; border: 1px solid #4CAF50;"
-        else:
-            style_sheet += f"background-color: {color_empty_bg}; color: #AAA; border: 1px solid #555;"
-        if self.is_active:
-            style_sheet += f"border: 2px solid {color_active_border};"
-        style_sheet += "} QPushButton:hover { background-color: #505050; }"
-        if self.assigned_node:
-            style_sheet += "QPushButton:hover { background-color: #388E3C; }"
-        self.setStyleSheet(style_sheet)
-        self.style().unpolish(self)
-        self.style().polish(self)
+        color_filled_bg = "#2E7D32"  # Green for filled
 
-    def set_active(self, active):
-        self.is_active = active
-        self.update_appearance()
+        # Hover colors
+        color_empty_hover = "#505050"
+        color_filled_hover = "#388E3C"
+
+        bg_color = color_filled_bg if self.assigned_node else color_empty_bg
+        hover_color = color_filled_hover if self.assigned_node else color_empty_hover
+
+        border = "1px solid #4CAF50" if self.assigned_node else "1px solid #555"
+        text_color = "#FFF" if self.assigned_node else "#AAA"
+
+        style_sheet = f"""
+            QPushButton {{
+                {self.base_style}
+                background-color: {bg_color};
+                color: {text_color};
+                border: {border};
+            }}
+            QPushButton:hover {{
+                background-color: {hover_color};
+            }}
+        """
+        self.setStyleSheet(style_sheet)
 
     def set_node(self, node_name):
         self.assigned_node = node_name
@@ -78,60 +95,36 @@ class SlotButton(QtWidgets.QPushButton):
 class BuildWidget(CollapsibleWidget):
     def __init__(self, parent=None):
         super().__init__("2. Joints & Modules", parent)
-        self.current_active_slot = None
 
         main_layout = QtWidgets.QVBoxLayout()
         main_layout.setSpacing(8)
         self._create_content(main_layout)
         self.set_content_layout(main_layout)
 
+        # Auto sync on load
         QtCore.QTimer.singleShot(200, self._sync_from_scene)
 
     def _create_content(self, layout):
-        # 1. Action Buttons
-        action_layout = QtWidgets.QHBoxLayout()
-        self.btn_assign = QtWidgets.QPushButton("Assign")
-        self.btn_clear = QtWidgets.QPushButton("Clear")
-        self.btn_refresh = QtWidgets.QPushButton("Refresh")
-        self.btn_assign.setMinimumHeight(30)
-        self.btn_assign.setStyleSheet(
-            "background-color: #4CAF50; color: white; font-weight: bold;"
-        )
-        self.btn_clear.setMinimumHeight(30)
-        self.btn_clear.setStyleSheet(
-            "background-color: #EF5350; color: white; font-weight: bold;"
-        )
-        self.btn_refresh.setMinimumHeight(30)
-        self.btn_refresh.setStyleSheet(
-            "background-color: #42A5F5; color: white; font-weight: bold;"
-        )
-        action_layout.addWidget(self.btn_assign)
-        action_layout.addWidget(self.btn_clear)
-        action_layout.addWidget(self.btn_refresh)
-        layout.addLayout(action_layout)
-
-        # 2. Joint Labels
-        layout.addWidget(QtWidgets.QLabel("<b>Joint Labels</b>"))
+        # --- 1. Joint Labels Section ---
+        layout.addWidget(QtWidgets.QLabel("<b>Joint Labels (Modules)</b>"))
         self.label_tree = self._create_tree_widget()
-        self.label_tree.setMinimumHeight(250)
+        self.label_tree.setMinimumHeight(200)
         self._init_groups_generic(self.label_tree, MODULE_SLOTS, is_attribute=False)
         layout.addWidget(self.label_tree)
 
-        # 3. Attributes
+        # --- 2. Attributes Section ---
         attr_main_layout = QtWidgets.QVBoxLayout()
+        attr_main_layout.setContentsMargins(0, 10, 0, 0)
         attr_main_layout.addWidget(QtWidgets.QLabel("<b>Attributes</b>"))
 
-        # Merged Container
+        # Two columns for attributes
         attr_container = QtWidgets.QWidget()
         attr_layout = QtWidgets.QHBoxLayout(attr_container)
         attr_layout.setContentsMargins(0, 0, 0, 0)
-        attr_layout.setSpacing(0)
+        attr_layout.setSpacing(4)
 
         self.attr_tree_left = self._create_tree_widget()
         self.attr_tree_right = self._create_tree_widget()
-
-        self.attr_tree_left.setFrameShape(QtWidgets.QFrame.NoFrame)
-        self.attr_tree_right.setFrameShape(QtWidgets.QFrame.NoFrame)
 
         attr_layout.addWidget(self.attr_tree_left)
         attr_layout.addWidget(self.attr_tree_right)
@@ -139,27 +132,41 @@ class BuildWidget(CollapsibleWidget):
         attr_main_layout.addWidget(attr_container)
         layout.addLayout(attr_main_layout)
 
-        # 4. Build Button
-        self.run_build_btn = QtWidgets.QPushButton("RUN BUILD")
-        self.run_build_btn.setMinimumHeight(45)
-        self.run_build_btn.setStyleSheet(
-            "background-color: #5D4037; color: white; font-weight: bold; font-size: 14px; margin-top: 10px;"
-        )
-        layout.addWidget(self.run_build_btn)
+        # --- 3. Action Area (Bottom) ---
+        bottom_layout = QtWidgets.QHBoxLayout()
+        bottom_layout.setContentsMargins(0, 10, 0, 0)
 
-        # Signal Connections
-        self.btn_assign.clicked.connect(self._on_assign_clicked)
-        self.btn_clear.clicked.connect(self._on_clear_clicked)
-        self.btn_refresh.clicked.connect(self._sync_from_scene)
+        # Build Button
+        self.run_build_btn = QtWidgets.QPushButton("RUN BUILD")
+        self.run_build_btn.setMinimumHeight(40)
+        self.run_build_btn.setStyleSheet(
+            "background-color: #5D4037; color: white; font-weight: bold; font-size: 14px; border-radius: 4px;"
+        )
         self.run_build_btn.clicked.connect(self._on_run_build)
+
+        # Refresh Button (Moved next to Build)
+        self.btn_refresh = QtWidgets.QPushButton("Refresh")
+        self.btn_refresh.setMinimumHeight(40)
+        self.btn_refresh.setFixedWidth(80)
+        self.btn_refresh.setStyleSheet(
+            "background-color: #42A5F5; color: white; font-weight: bold; border-radius: 4px;"
+        )
+        self.btn_refresh.clicked.connect(self._sync_from_scene)
+
+        bottom_layout.addWidget(self.run_build_btn)
+        bottom_layout.addWidget(self.btn_refresh)
+
+        layout.addLayout(bottom_layout)
 
     def _create_tree_widget(self):
         tree = QtWidgets.QTreeWidget()
         tree.setHeaderHidden(True)
-        tree.setIndentation(15)
-        tree.setMinimumHeight(300)
+        tree.setIndentation(10)
+        tree.setMinimumHeight(200)  # Balanced height
         tree.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
         tree.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
+        # Remove frame for cleaner look in columns
+        tree.setFrameShape(QtWidgets.QFrame.NoFrame)
         return tree
 
     def _init_groups_generic(self, tree_widget, data_dict, is_attribute):
@@ -169,19 +176,17 @@ class BuildWidget(CollapsibleWidget):
 
             header_widget = QtWidgets.QWidget()
             header_layout = QtWidgets.QHBoxLayout(header_widget)
-            header_layout.setContentsMargins(5, 5, 5, 5)
+            header_layout.setContentsMargins(0, 5, 0, 5)
 
             lbl = QtWidgets.QLabel(group_name)
             lbl.setStyleSheet("font-weight: bold; color: #BBB;")
 
-            # Add Button
+            # Add Row Button
             add_btn = QtWidgets.QPushButton("+")
-            add_btn.setFixedSize(24, 24)
+            add_btn.setFixedSize(20, 20)
             add_btn.setStyleSheet(
-                "QPushButton{ border: 1px solid #666; border-radius: 12px; background: #333; }"
+                "QPushButton{ border: 1px solid #555; border-radius: 10px; background: #333; color: #AAA; } QPushButton:hover{ background: #555; color: #FFF; }"
             )
-
-            # [FIX] X Button REMOVED entirely
 
             header_layout.addWidget(lbl)
             header_layout.addStretch()
@@ -197,40 +202,42 @@ class BuildWidget(CollapsibleWidget):
             )
             add_btn.clicked.connect(
                 lambda checked=False,
-                p=group_item,
-                s=slots,
-                t=tree_widget,
-                attr=is_attribute: self._add_row(t, p, s, attr)
+                       p=group_item,
+                       s=slots,
+                       t=tree_widget,
+                       attr=is_attribute: self._add_row(t, p, s, attr)
             )
 
     def _add_row(self, tree_widget, parent_item, slot_names, is_attribute):
         row_item = QtWidgets.QTreeWidgetItem(parent_item)
         row_widget = QtWidgets.QWidget()
         row_layout = QtWidgets.QHBoxLayout(row_widget)
-        row_layout.setContentsMargins(2, 2, 2, 2)
+        row_layout.setContentsMargins(0, 2, 0, 2)
         row_layout.setSpacing(4)
 
+        # Index Label
         index = parent_item.childCount()
         idx_label = QtWidgets.QLabel(f"{index}")
-        idx_label.setFixedWidth(20)
+        idx_label.setFixedWidth(15)
         idx_label.setAlignment(QtCore.Qt.AlignCenter)
-        idx_label.setStyleSheet("color: #666;")
+        idx_label.setStyleSheet("color: #666; font-size: 10px;")
         row_layout.addWidget(idx_label)
 
         slot_buttons = []
         for name in slot_names:
             slot_btn = SlotButton(name, is_attribute=is_attribute)
-            slot_btn.clicked.connect(
-                lambda checked=False, b=slot_btn: self._set_active_slot(b)
-            )
+            # Connect Double Click Signal
+            slot_btn.double_clicked.connect(self._on_slot_double_clicked)
+
             row_layout.addWidget(slot_btn)
             slot_buttons.append(slot_btn)
 
+        # Delete Row Button
         del_btn = QtWidgets.QPushButton("×")
-        del_btn.setFixedSize(20, 20)
-        del_btn.setStyleSheet("color: #888; border: none; font-weight: bold;")
+        del_btn.setFixedSize(18, 18)
+        del_btn.setStyleSheet("color: #666; border: none; font-weight: bold;")
         del_btn.clicked.connect(
-            lambda checked=False: self._remove_row(parent_item, row_item)
+            lambda checked=False: parent_item.removeChild(row_item)
         )
         row_layout.addWidget(del_btn)
 
@@ -238,34 +245,39 @@ class BuildWidget(CollapsibleWidget):
         row_item.setData(0, QtCore.Qt.UserRole, slot_buttons)
         return row_item
 
-    def _remove_row(self, parent, item):
-        if self.current_active_slot:
-            buttons = item.data(0, QtCore.Qt.UserRole)
-            if buttons and self.current_active_slot in buttons:
-                self.current_active_slot = None
-        parent.removeChild(item)
+    def _on_slot_double_clicked(self, btn_obj):
+        """
+        Handle double click on a slot button.
+        Logic:
+        1. If selection exists -> Toggle (Add if new, Remove if exists).
+        2. If no selection but button has node -> Clear that slot.
+        """
+        selection = cmds.ls(sl=True)
+        key = btn_obj.label_name
+        is_attr = btn_obj.is_attribute
 
-    # [FIX] _on_delete_group_clicked REMOVED
+        # Case 1: Active Selection in Maya
+        if selection:
+            target_node = selection[0]
+            # Call backend to toggle configuration
+            # Note: Backend should handle "if has attribute -> remove, else -> add"
+            logic.toggle_configuration(target_node, key, is_attr)
 
-    def _set_active_slot(self, btn_obj):
-        if self.current_active_slot:
-            try:
-                if self.current_active_slot != btn_obj:
-                    self.current_active_slot.set_active(False)
-            except RuntimeError:
-                pass
-        self.current_active_slot = btn_obj
-        self.current_active_slot.set_active(True)
-        if btn_obj.assigned_node and cmds.objExists(btn_obj.assigned_node):
-            cmds.select(btn_obj.assigned_node, replace=True)
+        # Case 2: No Selection, but want to clear existing assignment
+        elif btn_obj.assigned_node:
+            # Remove configuration from the assigned node
+            # Backend should handle force remove
+            logic.toggle_configuration(btn_obj.assigned_node, key, is_attr, force_remove=True)
+
+        # Refresh UI
+        self._sync_from_scene()
 
     def collect_ui_data(self):
+        """Collect data for building."""
         config_data = {}
-
         self._parse_tree_to_config(self.label_tree, config_data)
         self._parse_tree_to_config(self.attr_tree_left, config_data)
         self._parse_tree_to_config(self.attr_tree_right, config_data)
-
         return config_data
 
     def _parse_tree_to_config(self, tree, config_data):
@@ -277,8 +289,6 @@ class BuildWidget(CollapsibleWidget):
                 continue
 
             module_name = group_conf["name"]
-
-            # Ensure list exists
             if module_name not in config_data:
                 config_data[module_name] = []
 
@@ -299,107 +309,77 @@ class BuildWidget(CollapsibleWidget):
         ui_data = self.collect_ui_data()
         try:
             build.run_build_test(ui_data)
-            print("Build Test Execution Complete.")
+            print("[UI] Build process initiated.")
         except Exception as e:
             import traceback
-
             traceback.print_exc()
-            cmds.error(f"Build Test Error: {e}")
+            cmds.error(f"Build Error: {e}")
 
     def _sync_from_scene(self):
-        """Sync Data"""
-        print("[UI] Syncing scene labels and attributes...")
-        self.current_active_slot = None
+        """Fetch data from backend and update UI."""
+        # 1. Get structured data from backend
+        # Expected format:
+        # {
+        #   'labels': {'Hip': ['Jnt1'], 'Knee': ['Jnt2']},
+        #   'attributes': {'twist': ['Jnt1', 'Jnt2']}
+        # }
+        scene_data = logic.get_scene_data(ATTR_LIST)
 
-        # 1. Labels
-        scene_labels = logic.get_all_joint_labels()
+        label_data = scene_data.get('labels', {})
+        attr_data = scene_data.get('attributes', {})
 
-        # 2. Attributes
-        # [FIX] handle return value correctly (Dictionary when include_extra=False)
-        config_attrs = logic.get_scene_attributes(ATTR_LIST, include_extra=False)
-        # extra_attrs = {} # Not used
-
-        all_attr_data = config_attrs.copy()
-
+        # Split attribute keys for two columns UI
         all_keys = list(ATTR_LIST)
-
         left_keys = all_keys[0::2]
         right_keys = all_keys[1::2]
 
         left_dict = {k: [k] for k in left_keys}
         right_dict = {k: [k] for k in right_keys}
 
-        # 3. Sync
-        self._sync_tree_generic(self.label_tree, scene_labels, is_attribute=False)
+        # 2. Sync Trees
+        # Labels
+        self._sync_tree_content(self.label_tree, label_data, is_attribute=False)
 
+        # Attributes Left
         self.attr_tree_left.clear()
         self._init_groups_generic(self.attr_tree_left, left_dict, is_attribute=True)
-        self._sync_tree_generic(self.attr_tree_left, all_attr_data, is_attribute=True)
+        self._sync_tree_content(self.attr_tree_left, attr_data, is_attribute=True)
 
+        # Attributes Right
         self.attr_tree_right.clear()
         self._init_groups_generic(self.attr_tree_right, right_dict, is_attribute=True)
-        self._sync_tree_generic(self.attr_tree_right, all_attr_data, is_attribute=True)
+        self._sync_tree_content(self.attr_tree_right, attr_data, is_attribute=True)
 
-    def _sync_tree_generic(self, tree, data_source, is_attribute):
+    def _sync_tree_content(self, tree, data_source, is_attribute):
+        """Helper to fill tree rows based on data."""
         root = tree.invisibleRootItem()
         for i in range(root.childCount()):
             group_item = root.child(i)
             config = group_item.data(0, QtCore.Qt.UserRole)
-            if config:
-                slots = config["slots"]
+            if not config: continue
 
-                max_rows = 0
-                for s_name in slots:
-                    found_items = data_source.get(s_name, [])
-                    if len(found_items) > max_rows:
-                        max_rows = len(found_items)
-                max_rows = max(max_rows, 1)
+            slots = config["slots"]
 
-                group_item.takeChildren()
-                for r in range(max_rows):
-                    row_item = self._add_row(tree, group_item, slots, is_attribute)
-                    slot_buttons = row_item.data(0, QtCore.Qt.UserRole)
+            # Determine how many rows needed
+            max_rows = 0
+            for s_name in slots:
+                found_items = data_source.get(s_name, [])
+                if len(found_items) > max_rows:
+                    max_rows = len(found_items)
+            max_rows = max(max_rows, 1)  # At least one empty row
 
-                    for btn in slot_buttons:
-                        key = btn.label_name
-                        nodes = data_source.get(key, [])
-                        if r < len(nodes):
-                            btn.set_node(nodes[r])
-                        else:
-                            btn.set_node(None)
-                pass
+            # Clear existing rows and rebuild
+            group_item.takeChildren()
 
-    def _on_assign_clicked(self):
-        if not self.current_active_slot:
-            return
-        selection = cmds.ls(sl=True)
-        if not selection:
-            return
-        key = self.current_active_slot.label_name
-        node = selection[0]
+            for r in range(max_rows):
+                row_item = self._add_row(tree, group_item, slots, is_attribute)
+                slot_buttons = row_item.data(0, QtCore.Qt.UserRole)
 
-        if self.current_active_slot.is_attribute:
-            attr_class = attribute_pkg.get_attribute_class(key)
-            if attr_class:
-                attr_class.add_to(node)
-            else:
-                logic.add_attribute_to_node(node, key)
-        else:
-            logic.set_joint_label(node, key)
-        self._sync_from_scene()
+                for btn in slot_buttons:
+                    key = btn.label_name
+                    nodes = data_source.get(key, [])
 
-    def _on_clear_clicked(self):
-        if not self.current_active_slot:
-            return
-        node = self.current_active_slot.assigned_node
-        key = self.current_active_slot.label_name
-        if node:
-            if self.current_active_slot.is_attribute:
-                attr_class = attribute_pkg.get_attribute_class(key)
-                if attr_class:
-                    attr_class.remove_from(node)
-                else:
-                    logic.remove_attribute_from_node(node, key)
-            else:
-                logic.set_joint_label(node, "")
-        self._sync_from_scene()
+                    if r < len(nodes):
+                        btn.set_node(nodes[r])
+                    else:
+                        btn.set_node(None)

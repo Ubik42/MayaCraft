@@ -7,7 +7,7 @@ from core import tool
 
 
 class InbetweenAttribute(RigObject):
-    SLOTS = ["inbetween"]
+    SLOTS = ["inbetween_joints","unTwister"]
     """
     Splits a joint into multiple segments and distributes FK rotation.
     Segments are created in local space along the X-axis of the parent.
@@ -154,15 +154,16 @@ class InbetweenAttribute(RigObject):
 
     @staticmethod
     def add_to(node: str) -> bool:
-        return tool.add_attribute(
+        tool.add_attribute(
             node,
-            long_name="inbetween joints",
+            long_name="inbetween_joints",
+            nice_name="inbetween joints",
             attribute_type="long",
             min_value=1,
             default_value=1,
             keyable=True,
         )
-        return tool.add_attribute(
+        tool.add_attribute(
             node,
             long_name="unTwister",
             attribute_type="bool",
@@ -172,5 +173,5 @@ class InbetweenAttribute(RigObject):
 
     @staticmethod
     def remove_from(node: str) -> bool:
-        return tool.remove_attribute(node, "inbetween joints")
+        return tool.remove_attribute(node, "inbetween_joints")
         return tool.remove_attribute(node, "unTwister")

@@ -48,9 +48,7 @@ class TwistBendyAttribute(RigObject):
             else 0
         )
 
-        # print(f"[TwistBendy] Processing {node}: Twist={twist_val}, Bendy={bendy_val}")
 
-        # Placeholder logic implementation
         pass
 
     @staticmethod
