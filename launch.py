@@ -18,7 +18,7 @@ for pkg_name in PACKAGES_TO_RELOAD:
         reload_handler.reload_package(pkg_name)
 
 
-# --- 运行入口 ---
+# --- 运行入口，经过大量测试这就是最好的写法 ---
 def run():
     workspace_control_name = "MayaCraftWorkspaceControl"
 
@@ -49,9 +49,6 @@ def run():
 
     # 6. 添加进布局
     layout.addWidget(app)
-
-    # 7. 只要父级显示了，子级默认也会显示，但显式调用一下更保险
-    app.show()
 
     return app
 

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-from PySide6 import QtWidgets, QtCore, QtGui
-from core.logic.td import node_viewer_widget_logic as logic
+import maya.cmds as cmds
+from PySide6 import QtWidgets, QtCore
 from ui.collapsible_widget import CollapsibleWidget
 
 
@@ -10,109 +10,112 @@ class NodeViewerWidget(CollapsibleWidget):
         layout = QtWidgets.QVBoxLayout()
         self._create_content(layout)
         self.set_content_layout(layout)
-        self._connect_signals()
-
-        # 初始化时尝试刷新一次
-        self._on_refresh_view()
 
     def _create_content(self, layout):
-        # 0. 当前选中节点提示
-        self.current_node_lbl = QtWidgets.QLabel("当前未选中节点")
-        self.current_node_lbl.setStyleSheet("color: #aaa; font-style: italic;")
-        self.refresh_btn = QtWidgets.QPushButton("刷新选中")
+        # 定义内部样式
+        self.setStyleSheet("""
+            QPushButton { 
+                background-color: #5285a6; color: white; border-radius: 4px; padding: 6px; font-size: 12px; 
+            }
+            QPushButton:hover { background-color: #639ubc; }
+            QPushButton:pressed { background-color: #406882; }
+        """)
 
-        top_bar = QtWidgets.QHBoxLayout()
-        top_bar.addWidget(self.current_node_lbl)
-        top_bar.addWidget(self.refresh_btn)
+        # 1. Isolate
+        btn_iso = QtWidgets.QPushButton("Isolate Selected (Reset Graph)")
+        btn_iso.clicked.connect(self.on_isolate_clicked)
+        btn_iso.setStyleSheet("background-color: #d65d5d; font-weight: bold; color: white; padding: 8px;")
+        btn_iso.setToolTip("清空 Node Editor 并仅显示当前选择的节点")
 
-        # 1. 节点过滤设置
-        filter_layout = QtWidgets.QHBoxLayout()
-        self.connected_only_cb = QtWidgets.QCheckBox("仅显示连接")
-        self.has_value_cb = QtWidgets.QCheckBox("仅显示非默认值")
-        self.connected_only_cb.setChecked(False)  # 默认全显示方便调试
-        self.has_value_cb.setChecked(False)
+        # 2. Add Inputs/Outputs
+        lyt_add = QtWidgets.QHBoxLayout()
+        btn_add_in = QtWidgets.QPushButton("Add Inputs (<)")
+        btn_add_in.clicked.connect(lambda: self.on_expand_graph(True, False))
+        btn_add_out = QtWidgets.QPushButton("Add Outputs (>)")
+        btn_add_out.clicked.connect(lambda: self.on_expand_graph(False, True))
+        lyt_add.addWidget(btn_add_in)
+        lyt_add.addWidget(btn_add_out)
 
-        filter_layout.addWidget(self.connected_only_cb)
-        filter_layout.addWidget(self.has_value_cb)
+        # 3. Remove Inputs/Outputs
+        lyt_rem = QtWidgets.QHBoxLayout()
+        btn_rem_in = QtWidgets.QPushButton("Remove Inputs (<)")
+        btn_rem_in.clicked.connect(lambda: self.on_reduce_graph(True, False))
+        btn_rem_out = QtWidgets.QPushButton("Remove Outputs (>)")
+        btn_rem_out.clicked.connect(lambda: self.on_reduce_graph(False, True))
+        lyt_rem.addWidget(btn_rem_in)
+        lyt_rem.addWidget(btn_rem_out)
 
-        # 2. 属性展示列表
-        self.attr_tree = QtWidgets.QTreeWidget()
-        self.attr_tree.setHeaderLabels(["属性名", "当前值", "连接源/目标"])
-        self.attr_tree.setAlternatingRowColors(True)
-        # 调整列宽
-        self.attr_tree.setColumnWidth(0, 150)
-        self.attr_tree.setColumnWidth(1, 80)
+        # 4. Clear ObjectSets
+        btn_cls = QtWidgets.QPushButton("Remove All 'objectSet' Nodes")
+        btn_cls.clicked.connect(self.on_remove_object_sets)
+        btn_cls.setStyleSheet("background-color: #7d5e28; color: white;")
+        btn_cls.setToolTip("从当前图表中移除所有 objectSet 类型节点")
 
-        # 3. 自定义过滤并添加至 Node Editor
-        group_box = QtWidgets.QGroupBox("Node Editor 助手")
-        add_layout = QtWidgets.QVBoxLayout()
+        layout.addWidget(btn_iso)
+        layout.addLayout(lyt_add)
+        layout.addLayout(lyt_rem)
+        layout.addWidget(btn_cls)
 
-        input_layout = QtWidgets.QHBoxLayout()
-        self.type_filter_edit = QtWidgets.QLineEdit()
-        self.type_filter_edit.setPlaceholderText("节点类型 (如: lambert, skinCluster)...")
-        self.add_to_editor_btn = QtWidgets.QPushButton("添加至当前编辑器")
-        input_layout.addWidget(self.type_filter_edit)
-        input_layout.addWidget(self.add_to_editor_btn)
+    # --- Logic ---
 
-        add_layout.addLayout(input_layout)
-        group_box.setLayout(add_layout)
+    def get_ne(self):
+        """获取当前活动的 Node Editor 面板"""
+        pnls = cmds.getPanel(scriptType='nodeEditorPanel')
+        if not pnls: return None
+        for p in pnls:
+            if cmds.control(p, ex=1) and cmds.control(p, q=1, vis=1): return p
+        return pnls[0] if pnls else None
 
-        layout.addLayout(top_bar)
-        layout.addLayout(filter_layout)
-        layout.addWidget(self.attr_tree)
-        layout.addWidget(group_box)
+    def on_expand_graph(self, up, down):
+        """添加节点逻辑，已增加 objectSet 过滤"""
+        sel = cmds.ls(sl=1)
+        pnl = self.get_ne()
+        if sel and pnl:
+            try:
+                # 1. 获取所有连接的节点
+                raw_conns = cmds.listConnections(sel, s=up, d=down) or []
 
-    def _connect_signals(self):
-        self.refresh_btn.clicked.connect(self._on_refresh_view)
-        self.add_to_editor_btn.clicked.connect(self._on_add_to_editor)
-        self.connected_only_cb.stateChanged.connect(self._on_refresh_view)
-        self.has_value_cb.stateChanged.connect(self._on_refresh_view)
+                # 2. 过滤掉 objectSet 类型的节点
+                # (注意：listConnections 有时返回短名有时长名，nodeType 对两者都有效)
+                filtered_conns = [n for n in raw_conns if cmds.nodeType(n) != 'objectSet']
 
-    def _on_refresh_view(self):
-        """刷新属性视图"""
-        # 1. 获取数据
-        result = logic.get_filtered_attributes(
-            self.connected_only_cb.isChecked(),
-            self.has_value_cb.isChecked()
-        )
+                if filtered_conns:
+                    # 3. 添加过滤后的节点并整理布局
+                    cmds.nodeEditor(pnl + "NodeEditorEd", e=1, addNode=filtered_conns, layout=1)
+            except Exception as e:
+                print(f"Error expanding graph: {e}")
 
-        # 2. 更新 UI 状态
-        node_name = result.get('node', None)
-        if not node_name:
-            self.current_node_lbl.setText("当前未选中节点")
-            self.attr_tree.clear()
-            return
+    def on_reduce_graph(self, up, down):
+        sel = cmds.ls(sl=1)
+        pnl = self.get_ne()
+        if sel and pnl:
+            rem = cmds.listConnections(sel, s=up, d=down) or []
+            # 仅移除未选中的连接节点，保留当前选择
+            rem = [n for n in rem if n not in sel]
+            if rem:
+                cmds.nodeEditor(pnl + "NodeEditorEd", e=1, removeNode=rem)
 
-        self.current_node_lbl.setText(f"当前节点: {node_name} ({result.get('type')})")
+    def on_remove_object_sets(self):
+        pnl = self.get_ne()
+        if pnl:
+            try:
+                cmds.nodeEditor(pnl + "NodeEditorEd", e=1, removeNode=cmds.ls(type='objectSet') or [])
+            except:
+                pass
 
-        # 3. 填充 TreeWidget
-        self.attr_tree.clear()
-        attrs_data = result.get('attributes', [])
-
-        items = []
-        for attr_info in attrs_data:
-            # attr_info: {'name': 'tx', 'value': 1.0, 'connection': 'pCube1.tx', 'is_connected': True}
-            item = QtWidgets.QTreeWidgetItem()
-            item.setText(0, attr_info['name'])
-            item.setText(1, str(attr_info['value']))
-            item.setText(2, attr_info['connection'])
-
-            # 简单的颜色区分
-            if attr_info['is_connected']:
-                item.setForeground(0, QtGui.QColor("#82cfff"))  # 蓝色表示连接
-                item.setForeground(2, QtGui.QColor("#82cfff"))
-            elif attr_info['is_non_default']:
-                item.setForeground(1, QtGui.QColor("#ffeb3b"))  # 黄色表示数值被修改过
-
-            items.append(item)
-
-        self.attr_tree.addTopLevelItems(items)
-
-    def _on_add_to_editor(self):
-        filter_text = self.type_filter_edit.text()
-        if not filter_text:
-            print("请输入节点类型")
-            return
-
-        count = logic.add_nodes_to_editor(filter_text)
-        print(f"UI反馈: 已尝试添加 {count} 个 [{filter_text}] 类型的节点")
+    def on_isolate_clicked(self):
+        sel = cmds.ls(sl=1)
+        pnl = self.get_ne()
+        if sel and pnl:
+            ed = pnl + "NodeEditorEd"
+            try:
+                # 清空并添加选择
+                cmds.nodeEditor(ed, e=1, rootNode="", addNode=sel)
+                # 隐藏 Shape 节点以保持图表整洁
+                shapes = cmds.listRelatives(sel, shapes=1, f=1) or []
+                hide = [s for s in shapes if s not in cmds.ls(sel, l=1)]
+                if hide:
+                    cmds.nodeEditor(ed, e=1, removeNode=hide)
+                cmds.nodeEditor(ed, e=1, layout=1, frameAll=1)
+            except:
+                pass

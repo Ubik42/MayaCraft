@@ -3,7 +3,6 @@
 from PySide6 import QtWidgets
 
 # 导入 td 相关的子模块 UI
-from ui.td.expression_widget_ui import ExpressionWidget
 from ui.td.node_viewer_widget_ui import NodeViewerWidget
 from ui.td.node_analyser_widget_ui import NodeAnalyserWidget
 
@@ -30,17 +29,15 @@ class TDTab(QtWidgets.QWidget):
 
         # --- 添加 td 功能模块 ---
 
-        # 1. 表达式管理
-        self.expression_widget = ExpressionWidget()
-        content_layout.addWidget(self.expression_widget)
-
-        # 2. 节点查看器
+        # 1. 节点查看器
         self.node_viewer_widget = NodeViewerWidget()
         content_layout.addWidget(self.node_viewer_widget)
 
-        # 3. 节点分析器
+        # 2. 节点分析器
         self.node_analyser_widget = NodeAnalyserWidget()
         content_layout.addWidget(self.node_analyser_widget)
+
+
 
         # 底部拉伸
         content_layout.addStretch()
