@@ -10,6 +10,7 @@ _ATTRIBUTES = {
     "twist/bendy": TwistBendyAttribute,
     "inbetween": InbetweenAttribute,
     "segScaleComp": SegScaleCompAttribute,
+    "global":GlobalOrientAttribute
 }
 
 

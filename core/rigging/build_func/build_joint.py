@@ -11,11 +11,10 @@ def process_skeleton(builder, ui_config: dict):
     [核心逻辑] 骨骼处理函数
     负责：
     1. 骨骼复制 (Duplicate)
-    2. 重命名 (_M, _R)
-    3. 镜像 (_R -> _L)
-    4. 生成适配新骨骼的构建配置
-    #TODO 去掉这个垃圾功能
-    5. [NEW] Store Source->Deform Mapping in builder.node_map for cross-referencing.
+    2. [NEW] 清理额外属性
+    3. 重命名 (_M, _R)
+    4. 镜像 (_R -> _L)
+    5. 生成适配新骨骼的构建配置
     """
 
     groups = builder.groups
@@ -35,6 +34,28 @@ def process_skeleton(builder, ui_config: dict):
     new_nodes = cmds.duplicate(original_root, renameChildren=True)
     deform_root = new_nodes[0]
     tool.safe_parent(deform_root, groups["geo"])
+
+    # --- [新增功能] 清理所有复制出来的骨骼的额外属性 ---
+    # 获取新骨骼的所有层级节点
+    temp_clean_list = _get_hierarchy_list(deform_root)
+
+    print("  [JointBuilder] Cleaning extra attributes from deform skeleton...")
+    for node in temp_clean_list:
+        # 1. 清除自定义属性
+        user_attrs = cmds.listAttr(node, userDefined=True) or []
+        for attr in user_attrs:
+            try:
+                cmds.setAttr(f"{node}.{attr}", lock=False)
+                cmds.deleteAttr(node, attribute=attr)
+            except Exception:
+                pass
+
+        # 2. [新增] 清除骨骼标签 (Label)
+        if cmds.nodeType(node) == "joint":
+            cmds.setAttr(f"{node}.drawLabel", 0)
+            cmds.setAttr(f"{node}.type", 0)  # 0 = None
+            cmds.setAttr(f"{node}.otherType", "", type="string")
+    # ----------------------------------------------------
 
     # 3. 隐藏场景中除插件总组外的一切
     main_grp = groups["main"]
