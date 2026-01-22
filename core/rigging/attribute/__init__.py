@@ -5,13 +5,15 @@ from .twist_bendy import TwistBendyAttribute
 from .inbetween import InbetweenAttribute
 from .seg_scale_comp import SegScaleCompAttribute
 from .global_attribute import GlobalOrientAttribute
+from .aim import AimAttribute
 
 # Manual Registration
 _ATTRIBUTES = {
     "twist/bendy": TwistBendyAttribute,
     "inbetween": InbetweenAttribute,
     "segScaleComp": SegScaleCompAttribute,
-    "global":GlobalOrientAttribute
+    "global":GlobalOrientAttribute,
+    "aim":AimAttribute
 }
 
 

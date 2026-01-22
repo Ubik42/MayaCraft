@@ -76,7 +76,7 @@ def process_skeleton(builder, ui_config: dict):
 
     # 识别需要镜像的分支根节点 (基于原始骨骼名字包含 scapula 或 hip)
     deform_mirror_roots = []
-    mirror_keywords = ["scapula", "hip"]
+    mirror_keywords = ["scapula", "hip","eye"]
 
     # 预先扫描找出镜像根节点在 Deform 层级中的路径
     for orig_full, deform_full in zip(orig_hierarchy, deform_hierarchy):
