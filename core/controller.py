@@ -281,3 +281,55 @@ def replace_shape(target_node, shape_data_list):
                     pass
 
 
+# controller.py 添加到末尾
+
+def create_controller(name, shape="Circle", color=None, radius=1.0):
+    """
+    通用工厂函数：创建一个新的控制器 Transform。
+
+    Args:
+        name (str): 控制器名称。
+        shape (str): 形状名称（对应 json 文件名），或者 "Circle", "Square", "Pin" 等预设。
+        color (int/list): 颜色索引(int) 或 RGB(list [r,g,b])。
+        radius (float): 缩放半径（如果应用了 json，可能需要手动 scale）。
+
+    Returns:
+        str: 创建的控制器名称。
+    """
+    # 1. 创建 Transform
+    ctrl = cmds.createNode("transform", name=name)
+
+    # 2. 尝试应用库中的形状
+    success = apply_stored_shape(ctrl, shape)
+
+    # 3. 如果库里没有，或者没指定 json，创建默认形状 (Fallback)
+    if not success:
+        # 简单默认形状：圆环
+        # 注意：这里你可以扩展更多程序化生成的形状，或者就简单的 circle
+        temp = cmds.circle(nr=(0, 1, 0), r=radius, ch=False)[0]
+        # 把 shape 拿过来
+        shapes = cmds.listRelatives(temp, shapes=True)
+        if shapes:
+            cmds.parent(shapes[0], ctrl, relative=True, shape=True)
+        cmds.delete(temp)
+
+    # 4. 设置颜色
+    if color is not None:
+        shapes = cmds.listRelatives(ctrl, shapes=True) or []
+        for s in shapes:
+            cmds.setAttr(f"{s}.overrideEnabled", 1)
+            if isinstance(color, (list, tuple)):
+                # RGB
+                cmds.setAttr(f"{s}.overrideRGBColors", 1)
+                cmds.setAttr(f"{s}.overrideColorRGB", color[0], color[1], color[2])
+            else:
+                # Index
+                cmds.setAttr(f"{s}.overrideRGBColors", 0)
+                cmds.setAttr(f"{s}.overrideColor", int(color))
+
+    # 5. 简单的重命名 Shape
+    new_shapes = cmds.listRelatives(ctrl, shapes=True)
+    if new_shapes:
+        cmds.rename(new_shapes[0], f"{name}Shape")
+
+    return ctrl

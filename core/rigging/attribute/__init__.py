@@ -4,6 +4,7 @@
 from .twist_bendy import TwistBendyAttribute
 from .inbetween import InbetweenAttribute
 from .seg_scale_comp import SegScaleCompAttribute
+from .global_attribute import GlobalOrientAttribute
 
 # Manual Registration
 _ATTRIBUTES = {

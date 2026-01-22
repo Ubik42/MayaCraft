@@ -74,9 +74,17 @@ class RigBuilder:  # Mixin/Inherit RigTask for get_priority helper? Or just add 
         # 1. 场景结构
         self.task_queue.append(
             RigTask(
-                self.get_priority("task_structure", 0),
+                self.get_priority("build_structure", 0),
                 partial(build_structure.build_scene_structure,self),
                 "Setup Scene Structure",
+            )
+        )
+
+        self.task_queue.append(
+            RigTask(
+                self.get_priority("build_main", 1),
+                partial(build_main.create_main_root, self.groups),
+                "Setup Scene Structure Par2",
             )
         )
 

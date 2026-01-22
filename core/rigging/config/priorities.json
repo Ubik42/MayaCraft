@@ -1,7 +1,11 @@
 {
     "tasks": {
-        "task_structure": 0,
+        "build_structure": 0,
+
         "task_build_joint": 5,
+
+        "build_main": 6,
+
         "task_instantiate": 10,
 
         "attribute_inbetween_process": 11,
