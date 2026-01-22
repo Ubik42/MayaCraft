@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import maya.cmds as cmds
 from core.rigging.base import RigObject, RigTask
+from core import tool
 
 
 class SegScaleCompAttribute(RigObject):
@@ -40,9 +41,7 @@ class SegScaleCompAttribute(RigObject):
 
     @staticmethod
     def add_to(node: str) -> bool:
-        from core import tool
-
-        return tool.add_attribute(
+        tool.add_attribute(
             node,
             long_name="segScaleComp",
             attribute_type="bool",
@@ -52,6 +51,4 @@ class SegScaleCompAttribute(RigObject):
 
     @staticmethod
     def remove_from(node: str) -> bool:
-        from core import tool
-
-        return tool.remove_attribute(node, "segScaleComp")
+        tool.remove_attribute(node, "segScaleComp")

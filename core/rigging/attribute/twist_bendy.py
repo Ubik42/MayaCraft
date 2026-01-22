@@ -6,7 +6,7 @@ from core import tool
 
 
 class TwistBendyAttribute(RigObject):
-    SLOTS = ["twist", "bendy"]
+    SLOTS = ["twistJoints", "bendyCtrls"]
 
     def __init__(self, builder, mapping_data):
         self.builder = builder
@@ -28,11 +28,6 @@ class TwistBendyAttribute(RigObject):
         return self.mapping.get("twist") or self.mapping.get("bendy") or "Unknown"
 
     def run_logic(self):
-        # We can handle logic for both if they exist on the same node
-        # The mapping key usually corresponds to the attribute name found in SLOTS
-        # If this class is instantiated, it means one of the slots matched.
-
-        # Typically, the node is the same for both if they are on the same joint.
         node = self._get_node_name()
         if not node or not cmds.objExists(node):
             return
@@ -55,16 +50,16 @@ class TwistBendyAttribute(RigObject):
     def add_to(node: str) -> bool:
         s1 = tool.add_attribute(
             node,
-            long_name="twist",
+            long_name="twistJoints",
             nice_name="Twist Joints",
             attribute_type="long",  # Integer
             min_value=0,
-            default_value=0,
+            default_value=2,
             keyable=True,
         )
         s2 = tool.add_attribute(
             node,
-            long_name="bendy",
+            long_name="bendyCtrls",
             nice_name="Bendy Ctrls",
             attribute_type="long",  # Integer
             min_value=0,
@@ -73,5 +68,5 @@ class TwistBendyAttribute(RigObject):
         )
     @staticmethod
     def remove_from(node: str) -> bool:
-        s1 = tool.remove_attribute(node, "twist")
-        s2 = tool.remove_attribute(node, "bendy")
+        tool.remove_attribute(node, "twistJoints")
+        tool.remove_attribute(node, "bendyCtrls")
