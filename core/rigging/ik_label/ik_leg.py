@@ -49,6 +49,10 @@ class IKLegModule(RigObject):
             f"[IK Leg] Building System: {start_jnt_short} -> {end_jnt_short}. FK: {fk_offset_name}"
         )
 
+        #############################
+        # 设置控制器
+        #############################
+
         self.system_data = ikfk.create_ikfk_system(
             start_bone_name=start_jnt_short,
             end_bone_name=end_jnt_short,

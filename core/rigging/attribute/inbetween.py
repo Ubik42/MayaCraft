@@ -38,7 +38,6 @@ class InbetweenAttribute(RigObject):
         """Split joints along the vector length (X-axis relative)."""
         node = self.mapping.get("inbetween")
         short_name = tool.get_short_name(node)
-        
 
         if not node or not cmds.objExists(node):
             return
@@ -49,7 +48,6 @@ class InbetweenAttribute(RigObject):
         n_segments = cmds.getAttr(f"{node}.inbetween")
         if n_segments <= 1:
             return
-
 
         # Check children
         children = cmds.listRelatives(node, children=True, type="joint", fullPath=True)
@@ -124,7 +122,9 @@ class InbetweenAttribute(RigObject):
             return
 
         # 2. 创建平均值计算节点
-        md_node = cmds.createNode("multiplyDivide", name=f"Inbetween_Div_{source_short}")
+        md_node = cmds.createNode(
+            "multiplyDivide", name=f"Inbetween_Div_{source_short}"
+        )
         cmds.setAttr(f"{md_node}.operation", 1)  # Multiply
         cmds.setAttr(f"{md_node}.input2X", 1.0 / n)  # 平均系数
 
@@ -144,7 +144,9 @@ class InbetweenAttribute(RigObject):
             fk_offset_grp = f"FKOffset_{part_short}"
 
             if cmds.objExists(fk_offset_grp):
-                cmds.connectAttr(f"{md_node}.outputX", f"{fk_offset_grp}.rotateX", force=True)
+                cmds.connectAttr(
+                    f"{md_node}.outputX", f"{fk_offset_grp}.rotateX", force=True
+                )
             else:
                 print(f"[Inbetween] Warning: Offset {fk_offset_grp} not found.")
 
@@ -152,36 +154,23 @@ class InbetweenAttribute(RigObject):
 
     @staticmethod
     def add_to(node: str) -> bool:
-        attr_name = "inbetween"
-        if not cmds.objExists(node):
-            return False
-        if cmds.attributeQuery(attr_name, node=node, exists=True):
-            return True
-
-        try:
-            cmds.addAttr(
-                node,
-                longName=attr_name,
-                attributeType="long",
-                min=1,
-                defaultValue=1,
-                keyable=True,
-            )
-            print(f"[Attribute] Added: {node}.{attr_name}")
-            return True
-        except Exception as e:
-            cmds.warning(f"Failed to add {attr_name}: {e}")
-            return False
+        return tool.add_attribute(
+            node,
+            long_name="inbetween joints",
+            attribute_type="long",
+            min_value=1,
+            default_value=1,
+            keyable=True,
+        )
+        return tool.add_attribute(
+            node,
+            long_name="unTwister",
+            attribute_type="bool",
+            default_value=0,
+            keyable=True,
+        )
 
     @staticmethod
     def remove_from(node: str) -> bool:
-        attr_name = "inbetween"
-        if not cmds.objExists(node):
-            return False
-        if cmds.attributeQuery(attr_name, node=node, exists=True):
-            return False
-        try:
-            cmds.deleteAttr(node, attribute=attr_name)
-            return True
-        except:
-            return False
+        return tool.remove_attribute(node, "inbetween joints")
+        return tool.remove_attribute(node, "unTwister")

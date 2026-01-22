@@ -40,38 +40,18 @@ class SegScaleCompAttribute(RigObject):
 
     @staticmethod
     def add_to(node: str) -> bool:
-        attr_name = "segScaleComp"
-        if not cmds.objExists(node):
-            return False
-        if cmds.attributeQuery(attr_name, node=node, exists=True):
-            return True
+        from core import tool
 
-        try:
-            cmds.addAttr(
-                node,
-                longName=attr_name,
-                attributeType="bool",
-                defaultValue=1,
-                keyable=True,
-            )
-            print(f"[Attribute] Added: {node}.{attr_name}")
-            return True
-        except Exception as e:
-            cmds.warning(f"Failed to add {attr_name}: {e}")
-            return False
+        return tool.add_attribute(
+            node,
+            long_name="segScaleComp",
+            attribute_type="bool",
+            default_value=1,
+            keyable=True,
+        )
 
     @staticmethod
     def remove_from(node: str) -> bool:
-        attr_name = "segScaleComp"
-        if not cmds.objExists(node):
-            return False
-        if not cmds.attributeQuery(attr_name, node=node, exists=True):
-            return False
+        from core import tool
 
-        try:
-            cmds.deleteAttr(node, attribute=attr_name)
-            print(f"[Attribute] Removed: {node}.{attr_name}")
-            return True
-        except Exception as e:
-            cmds.warning(f"Failed to remove {attr_name}: {e}")
-            return False
+        return tool.remove_attribute(node, "segScaleComp")

@@ -1,18 +1,17 @@
 # core/rigging/attribute/__init__.py
 # -*- coding: utf-8 -*-
 
-from .twist import TwistAttribute
-from .bendy import BendyAttribute
+from .twist_bendy import TwistBendyAttribute
 from .inbetween import InbetweenAttribute
 from .seg_scale_comp import SegScaleCompAttribute
 
 # Manual Registration
 _ATTRIBUTES = {
-    "twist": TwistAttribute,
-    "bendy": BendyAttribute,
+    "twist/bendy": TwistBendyAttribute,
     "inbetween": InbetweenAttribute,
-    "segScaleComp": SegScaleCompAttribute
+    "segScaleComp": SegScaleCompAttribute,
 }
+
 
 def get_all_slot_names():
     """
@@ -20,11 +19,13 @@ def get_all_slot_names():
     """
     return list(_ATTRIBUTES.keys())
 
+
 def get_attribute_class(name):
     """
     Returns the attribute class for a given name.
     """
     return _ATTRIBUTES.get(name)
+
 
 def create_attribute(label_type, builder, mapping_data):
     """

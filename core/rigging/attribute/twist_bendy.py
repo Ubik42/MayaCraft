@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import maya.cmds as cmds
 from core.rigging.base import RigObject, RigTask
+from core import tool
 
 
 class TwistBendyAttribute(RigObject):
@@ -54,64 +55,25 @@ class TwistBendyAttribute(RigObject):
 
     @staticmethod
     def add_to(node: str) -> bool:
-        if not cmds.objExists(node):
-            return False
-
-        success = True
-
-        # Add Twist Joints
-        attr_twist = "twist"
-        if not cmds.attributeQuery(attr_twist, node=node, exists=True):
-            try:
-                cmds.addAttr(
-                    node,
-                    longName=attr_twist,
-                    niceName="Twist Joints",
-                    attributeType="long",  # Integer for count
-                    min=0,
-                    defaultValue=0,
-                    keyable=True,
-                )
-                print(f"[Attribute] Added: {node}.{attr_twist} (Twist Joints)")
-            except Exception as e:
-                cmds.warning(f"Failed to add twist: {e}")
-                success = False
-        else:
-            # If exists, maybe update niceName? typically not needed if existing
-            pass
-
-        # Add Bendy Ctrls
-        attr_bendy = "bendy"
-        if not cmds.attributeQuery(attr_bendy, node=node, exists=True):
-            try:
-                cmds.addAttr(
-                    node,
-                    longName=attr_bendy,
-                    niceName="Bendy Ctrls",
-                    attributeType="long",  # Integer for count/enum logic
-                    min=0,
-                    defaultValue=0,
-                    keyable=True,
-                )
-                print(f"[Attribute] Added: {node}.{attr_bendy} (Bendy Ctrls)")
-            except Exception as e:
-                cmds.warning(f"Failed to add bendy: {e}")
-                success = False
-
-        return success
-
+        s1 = tool.add_attribute(
+            node,
+            long_name="twist",
+            nice_name="Twist Joints",
+            attribute_type="long",  # Integer
+            min_value=0,
+            default_value=0,
+            keyable=True,
+        )
+        s2 = tool.add_attribute(
+            node,
+            long_name="bendy",
+            nice_name="Bendy Ctrls",
+            attribute_type="long",  # Integer
+            min_value=0,
+            default_value=0,
+            keyable=True,
+        )
     @staticmethod
     def remove_from(node: str) -> bool:
-        if not cmds.objExists(node):
-            return False
-
-        success = True
-        for attr in ["twist", "bendy"]:
-            if cmds.attributeQuery(attr, node=node, exists=True):
-                try:
-                    cmds.deleteAttr(node, attribute=attr)
-                    print(f"[Attribute] Removed: {node}.{attr}")
-                except Exception as e:
-                    cmds.warning(f"Failed to remove {attr}: {e}")
-                    success = False
-        return success
+        s1 = tool.remove_attribute(node, "twist")
+        s2 = tool.remove_attribute(node, "bendy")

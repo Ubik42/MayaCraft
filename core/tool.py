@@ -128,6 +128,148 @@ def set_draw(
                 pass
 
 
+def add_attribute(
+        node: str,
+        long_name: str,
+        nice_name: str = None,
+        attribute_type: str = "double",  # 默认数值类型
+        is_data_type: bool = False,  # 新增：标记是否为复杂数据类型(string, matrix等)
+        enum_names: List[str] = None,  # 新增：枚举名称列表
+        min_value: Union[float, int] = None,
+        max_value: Union[float, int] = None,
+        default_value: Union[float, int, str] = None,  # 默认值可能为字符串
+        keyable: bool = True,
+        channel_box: bool = False,
+        multi: bool = False  # 新增：是否为数组
+) -> bool:
+    """
+    增强版属性添加函数，支持 double, float, long, short, bool 以及 message String, Enum, Numeric 等。
+    """
+    if not cmds.objExists(node):
+        return False
+
+    if cmds.attributeQuery(long_name, node=node, exists=True):
+        return True
+
+    kwargs = {
+        "longName": long_name,
+    }
+
+    # 1. 区分 -at 和 -dt
+    if is_data_type or attribute_type in ["string", "matrix", "stringArray"]:
+        kwargs["dataType"] = attribute_type
+    else:
+        kwargs["attributeType"] = attribute_type
+
+    # 2. 处理 Enum
+    if attribute_type == "enum":
+        if enum_names:
+            # Maya enum 格式为 "A:B:C"
+            kwargs["enumName"] = ":".join(enum_names)
+        else:
+            # 给一个默认值防止报错
+            kwargs["enumName"] = "Default"
+
+    if nice_name:
+        kwargs["niceName"] = nice_name
+
+    # 3. 处理多重属性
+    if multi:
+        kwargs["multi"] = True
+        kwargs["indexMatters"] = True
+
+    # 4. 数值限制 (仅对非数据类型有效)
+    if not is_data_type and attribute_type != "string":
+        if min_value is not None:
+            kwargs["min"] = min_value
+        if max_value is not None:
+            kwargs["max"] = max_value
+
+    # 5. 默认值处理
+    if default_value is not None:
+        if attribute_type == "string":
+            # 字符串类型的默认值通常需要在创建后通过 setAttr 设置
+            pass
+        else:
+            kwargs["defaultValue"] = default_value
+
+    if keyable:
+        kwargs["keyable"] = True
+
+    try:
+        cmds.addAttr(node, **kwargs)
+
+        # 后处理：字符串默认值需要单独设置
+        if attribute_type == "string" and default_value:
+            cmds.setAttr(f"{node}.{long_name}", default_value, type="string")
+
+        if channel_box and not keyable:
+            cmds.setAttr(f"{node}.{long_name}", channelBox=True)
+
+        print(f"[Attribute] Added: {node}.{long_name} ({attribute_type})")
+        return True
+
+    except Exception as e:
+        cmds.warning(f"Failed to add {long_name} to {node}: {e}")
+        return False
+
+
+def remove_attribute(node: str, attr_name: str) -> bool:
+    """
+    增强版属性移除函数。
+    会自动处理锁定状态，并防止尝试删除原生静态属性。
+    """
+    if not cmds.objExists(node):
+        return False
+
+    # 1. 检查属性是否存在
+    if not cmds.attributeQuery(attr_name, node=node, exists=True):
+        # 如果属性本来就不存在，视为“移除成功”，这在自动化脚本中更安全
+        # 避免脚本因为"没找到要删的东西"而中断
+        return True
+
+    full_name = f"{node}.{attr_name}"
+
+    # 2. 检查是否为 Maya 原生(静态)属性
+    # 原生属性（如 translateX, visibility）是无法被 deleteAttr 删除的
+    # 我们只尝试删除 "用户定义 (Dynamic)" 的属性
+    # 注意：extension attributes 也可以被删除，这里主要过滤 standard attributes
+    is_dynamic = cmds.addAttr(full_name, query=True, usedAsFilename=False)
+    # 注：Maya没有直接查"isDynamic"的简单标志，但在查询 addAttr 时，
+    # 如果是静态属性，通常会报错或行为不同。
+    # 更准确的方法是列表检查：
+    user_attrs = cmds.listAttr(node, userDefined=True) or []
+    if attr_name not in user_attrs:
+        # 有一种特殊情况：Extension Attributes 也是可以删的，但很难区分。
+        # 这里做一个简单的 try-check 机制更保险，或者直接跳过标准属性。
+        # 如果属性不在 userDefined 里，通常意味着它是核心属性，删不掉。
+        cmds.warning(f"Cannot remove '{attr_name}': It is a static/default Maya attribute.")
+        return False
+
+    # 3. 处理锁定状态 (Locked Attributes)
+    if cmds.getAttr(full_name, lock=True):
+        try:
+            cmds.setAttr(full_name, lock=False)
+            print(f"  [Remove] Unlocked: {full_name}")
+        except Exception as e:
+            cmds.warning(f"Failed to unlock {full_name}, cannot remove: {e}")
+            return False
+
+    # 4. 执行删除
+    try:
+        cmds.deleteAttr(node, attribute=attr_name)
+        print(f"[Attribute] Removed: {full_name}")
+        return True
+    except Exception as e:
+        # 捕获可能的引用节点(Referenced Node)错误
+        # 如果节点是引用的，且属性也是引用文件里定义的，则无法删除
+        if cmds.referenceQuery(node, isNodeReferenced=True):
+             cmds.warning(f"Failed to remove {attr_name}: Node is referenced (attribute might belong to reference source).")
+        else:
+             cmds.warning(f"Failed to remove {attr_name} from {node}: {e}")
+        return False
+
+
 def unlock_transform(
     target_nodes: Union[str, List[str]],
     translate: bool = True,
@@ -295,109 +437,3 @@ def get_short_name(path: str) -> str:
     if not path:
         return ""
     return path.split("|")[-1]
-
-
-############################################
-# joint part
-############################################
-
-
-# def orient_joint(joint: str, direction_bool: bool) -> None:
-#     """
-#     Orient the joint specifically for the rigging system using Pure Matrix Math.
-#
-#     Args:
-#         joint (str): Joint to orient.
-#         direction_bool (bool):
-#             True (Right/Center) -> X points to Child, Y points to World +X.
-#             False (Left)        -> X points Opposite Child, Y points to World -X.
-#     """
-#     if not cmds.objExists(joint):
-#         return
-#
-#     children = (
-#         cmds.listRelatives(joint, children=True, type="transform", fullPath=True) or []
-#     )
-#
-#     # 1. Capture Children World Matrices
-#     child_matrices = {}
-#     if children:
-#         for child in children:
-#             child_matrices[child] = cmds.xform(child, q=True, m=True, ws=True)
-#
-#     try:
-#         if children:
-#             # --- Vector Calculation ---
-#             # Get Positions
-#             j_pos = om.MVector(cmds.xform(joint, q=True, t=True, ws=True))
-#             # Aim at first child
-#             c_pos = om.MVector(cmds.xform(children[0], q=True, t=True, ws=True))
-#
-#             aim_vec = (c_pos - j_pos).normal()
-#
-#             if direction_bool:
-#                 # Right/Center: X -> Child, Up -> World +X
-#                 x_axis = aim_vec
-#                 up_vec = om.MVector(1, 0, 0)
-#             else:
-#                 # Left: X -> -Child, Up -> World -X
-#                 x_axis = -aim_vec
-#                 up_vec = om.MVector(-1, 0, 0)
-#
-#             # Orthonormalize
-#             # Check parallel
-#             if abs(x_axis * up_vec) > 0.99:
-#                 # Fallback if Aim is parallel to World X
-#                 up_vec = om.MVector(0, 1, 0)
-#
-#             z_axis = (x_axis ^ up_vec).normal()
-#             y_axis = (z_axis ^ x_axis).normal()
-#
-#             # Construct World Rotation Matrix
-#             rot_mat_list = [
-#                 x_axis.x,
-#                 x_axis.y,
-#                 x_axis.z,
-#                 0.0,
-#                 y_axis.x,
-#                 y_axis.y,
-#                 y_axis.z,
-#                 0.0,
-#                 z_axis.x,
-#                 z_axis.y,
-#                 z_axis.z,
-#                 0.0,
-#                 0.0,
-#                 0.0,
-#                 0.0,
-#                 1.0,
-#             ]
-#             world_rot_mat = om.MMatrix(rot_mat_list)
-#
-#             # Convert to Local Space (Multiply by Parent Inverse)
-#             # Find parent matrix
-#             parents = cmds.listRelatives(joint, parent=True, fullPath=True)
-#             if parents:
-#                 parent_mat_list = cmds.xform(parents[0], q=True, m=True, ws=True)
-#                 parent_mat = om.MMatrix(parent_mat_list)
-#                 local_mat = world_rot_mat * parent_mat.inverse()
-#             else:
-#                 local_mat = world_rot_mat
-#
-#             # Extract Euler
-#             euler = om.MTransformationMatrix(local_mat).rotation()
-#             r_deg = [math.degrees(a) for a in (euler.x, euler.y, euler.z)]
-#
-#             # Apply
-#             cmds.setAttr(f"{joint}.jointOrient", *r_deg, type="double3")
-#             cmds.setAttr(f"{joint}.rotate", 0, 0, 0, type="double3")
-#
-#             print(f"  - Math Orient Success: {joint}")
-#
-#     except Exception as e:
-#         print(f"Warning: Failed to orient {joint}: {e}")
-#
-#     # 3. Restore Children
-#     if child_matrices:
-#         for child, matrix in child_matrices.items():
-#             cmds.xform(child, m=matrix, ws=True)
