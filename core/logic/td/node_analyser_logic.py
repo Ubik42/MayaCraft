@@ -2,11 +2,14 @@
 import maya.cmds as cmds
 import hashlib
 import colorsys
-import base64
+import os
+import subprocess
+import tempfile
+import platform
 
 
-class NodeAnalyserLogic:
-    # 需要智能追踪的数学节点类型
+class NodeAnalyserLogic(object):
+    # 绿色：数学/逻辑节点类型集合
     MATH_NODE_TYPES = {
         'multMatrix', 'inverseMatrix', 'blendMatrix', 'composeMatrix',
         'decomposeMatrix', 'pickMatrix', 'aimMatrix', 'wtAddMatrix',
@@ -22,12 +25,14 @@ class NodeAnalyserLogic:
 
     def __init__(self):
         self.dynamic_classes = set()
-        self.mm_lines = []
-        self.mm_nodes = set()
 
+    # =========================================================================
+    # 1. 智能追踪 (Smart Trace)
+    # =========================================================================
     def get_expanded_selection(self, initial_selection, smart_trace=True):
-        """获取扩展的节点列表，并过滤 objectSet"""
-        # 初始过滤
+        """
+        获取扩展的选择集。
+        """
         valid_initial = [n for n in (cmds.ls(initial_selection, long=True) or []) if cmds.nodeType(n) != 'objectSet']
 
         if not smart_trace:
@@ -55,11 +60,7 @@ class NodeAnalyserLogic:
                 except:
                     continue
 
-                # 过滤 objectSet
-                if node_type == 'objectSet':
-                    visited.add(full_conn)
-                    continue
-
+                # 追踪数学节点
                 if node_type in self.MATH_NODE_TYPES:
                     visited.add(full_conn)
                     final_nodes.add(full_conn)
@@ -67,8 +68,250 @@ class NodeAnalyserLogic:
 
         return list(final_nodes)
 
-    def get_connections(self, node, source=True, destination=True):
-        """获取单个节点的连接信息"""
+    # =========================================================================
+    # 2. Mermaid 代码生成 (核心样式更新)
+    # =========================================================================
+    def generate_mermaid(self, nodes, show_in=True, show_out=True):
+        """
+        生成 Mermaid 代码。
+        - 强制横平竖直 (stepAfter)
+        - 强制指定颜色 (黄/红/蓝/绿)
+        """
+        self.dynamic_classes = set()  # 重置动态样式
+
+        # [Req 2] Notion 风格配置 & 强制直角连线
+        # themeVariables: 调整基础颜色适应暗色背景
+        # flowchart curve: stepAfter 实现横平竖直
+        lines = [
+            "%%{init: {'theme': 'base', 'themeVariables': { 'darkMode': true, 'primaryColor': '#333', 'lineColor': '#aaa', 'mainBkg': '#1e1e1e'}, 'flowchart': {'curve': 'stepAfter', 'nodeSpacing': 50, 'rankSpacing': 50}}}%%",
+            "graph LR"
+        ]
+
+        # [Req 3] 颜色样式定义 (Notion Palette)
+        # Transform: 黄色
+        lines.append("    classDef transform fill:#D9B700,stroke:#B7950B,stroke-width:2px,color:#fff;")
+        # Joint: 蓝色
+        lines.append("    classDef joint fill:#2E86DE,stroke:#1C5D99,stroke-width:2px,color:#fff;")
+        # Constraint: 红色
+        lines.append("    classDef constraint fill:#E74C3C,stroke:#C0392B,stroke-width:2px,color:#fff;")
+        # Math/Matrix: 绿色
+        lines.append("    classDef math fill:#2ECC71,stroke:#27AE60,stroke-width:1px,color:#fff;")
+        # Matrix 也可以用紫色区分，或者统一绿色，这里统一归为数学类绿色
+        lines.append("    classDef matrix fill:#2ECC71,stroke:#27AE60,stroke-width:1px,color:#fff;")
+
+        # Controller (Smart Detect): 金色/橙色
+        lines.append("    classDef controller fill:#F39C12,stroke:#D35400,stroke-width:2px,color:#fff;")
+
+        # Router (路由点): 深灰
+        lines.append("    classDef router fill:#333,stroke:#666,stroke-width:1px,color:#aaa,rx:2,ry:2,font-size:8pt;")
+
+        mm_nodes_added = set()
+        all_raw_edges = []
+        edge_counter = 0
+
+        # --- Helper: 节点添加与样式分配 ---
+        def add_node_def(fullname):
+            nid = self._mm_id(fullname)
+            if nid not in mm_nodes_added:
+                short = fullname.split("|")[-1]
+                typ = self._get_smart_type(fullname)
+
+                # [Req 3] 样式分配逻辑
+                style_class = "transform"  # 默认黄色
+
+                if typ == 'joint':
+                    style_class = "joint"  # 蓝
+                elif 'Constraint' in typ:  # 包含 constraint 字样
+                    style_class = "constraint"  # 红
+                elif typ == 'controller':
+                    style_class = "controller"
+                elif typ in self.MATH_NODE_TYPES:
+                    if 'Matrix' in typ:
+                        style_class = "matrix"  # 绿
+                    else:
+                        style_class = "math"  # 绿
+                elif typ == 'transform':
+                    style_class = "transform"  # 黄
+                else:
+                    # 其他节点：随机颜色
+                    style_class = self._get_random_color_class(typ, lines)
+
+                safe_short = short.replace('"', "'")
+                lines.append(f'    {nid}["{safe_short}<br><small>({typ})</small>"]:::{style_class}')
+                mm_nodes_added.add(nid)
+            return nid
+
+        # --- 收集节点和边 ---
+        for node in nodes:
+            nid = add_node_def(node)
+
+            if show_in:
+                ins = self._get_connections(node, source=True, destination=False)
+                for x in ins:
+                    oid = add_node_def(x['other_node_full'])
+                    all_raw_edges.append({
+                        'idx': edge_counter,
+                        'src_id': oid, 'dst_id': nid,
+                        'src_attr': x['other_attr'], 'dst_attr': x['my_attr']
+                    })
+                    edge_counter += 1
+
+            if show_out:
+                outs = self._get_connections(node, source=False, destination=True)
+                for x in outs:
+                    oid = add_node_def(x['other_node_full'])
+                    all_raw_edges.append({
+                        'idx': edge_counter,
+                        'src_id': nid, 'dst_id': oid,
+                        'src_attr': x['my_attr'], 'dst_attr': x['other_attr']
+                    })
+                    edge_counter += 1
+
+        # --- 连线聚合 (Router) ---
+        processed_indices = set()
+        final_edge_lines = set()
+
+        # 1. 路由聚合 (Router)
+        router_map = {}
+        for edge in all_raw_edges:
+            key = (edge['src_id'], edge['src_attr'], edge['dst_attr'])
+            if key not in router_map: router_map[key] = []
+            router_map[key].append(edge)
+
+        for (src_id, src_attr, dst_attr), edges in router_map.items():
+            unique_targets = set(e['dst_id'] for e in edges)
+
+            if len(unique_targets) > 1:
+                router_hash = hashlib.md5(f"{src_id}{src_attr}{dst_attr}".encode()).hexdigest()[:6]
+                router_id = f"r_{router_hash}"
+                router_label = f"{src_attr} → {dst_attr}".replace('"', "'")
+
+                lines.append(f'    {router_id}(["{router_label}"]):::router')
+                final_edge_lines.add(f'    {src_id} --- {router_id}')
+                for dst_id in unique_targets:
+                    final_edge_lines.add(f'    {router_id} --> {dst_id}')
+
+                for e in edges: processed_indices.add(e['idx'])
+
+        # 2. 直连聚合 (Direct Bundling)
+        direct_map = {}
+        for edge in all_raw_edges:
+            if edge['idx'] in processed_indices: continue
+            key = (edge['src_id'], edge['dst_id'])
+            if key not in direct_map: direct_map[key] = []
+            direct_map[key].append(edge)
+
+        for (src_id, dst_id), edges in direct_map.items():
+            attr_pairs = {}
+            for e in edges:
+                if e['src_attr'] not in attr_pairs: attr_pairs[e['src_attr']] = []
+                if e['dst_attr'] not in attr_pairs[e['src_attr']]:
+                    attr_pairs[e['src_attr']].append(e['dst_attr'])
+
+            label_parts = []
+            for s, d_list in attr_pairs.items():
+                d_str = ", ".join(d_list)
+                label_parts.append(f"{s} → {d_str}")
+
+            # 使用 thick 线条增加 Notion 感
+            final_label = "<br>".join(label_parts).replace('"', "'")
+            final_edge_lines.add(f'    {src_id} -- "{final_label}" --> {dst_id}')
+
+        lines.extend(sorted(list(final_edge_lines)))
+
+        return "\n".join(lines)
+
+    # =========================================================================
+    # 3. 渲染图片 (调用 MMDC)
+    # =========================================================================
+    def render_mermaid_to_image(self, mermaid_text):
+        """调用 mmdc 生成图片"""
+        system_platform = platform.system()
+        mmdc_cmd = "mmdc.cmd" if system_platform == 'Windows' else "mmdc"
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.mmd', delete=False, encoding='utf-8') as f_in:
+            f_in.write(mermaid_text)
+            input_path = f_in.name
+
+        output_path = input_path.replace('.mmd', '.png')
+
+        try:
+            # -b transparent: 透明背景
+            # -s 2: 2倍缩放
+            # theme 已在文本 init 中定义，这里不需要 -t
+            cmd = [mmdc_cmd, "-i", input_path, "-o", output_path, "-b", "transparent", "-s", "2"]
+
+            startupinfo = None
+            if system_platform == 'Windows':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+
+            subprocess.run(cmd, check=True, startupinfo=startupinfo, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+            if not os.path.exists(output_path):
+                raise Exception("Image output not found.")
+            return output_path
+
+        except FileNotFoundError:
+            raise Exception("MMDC not found. Please run: npm install -g @mermaid-js/mermaid-cli")
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Render Error: {e.stderr.decode() if e.stderr else str(e)}")
+        finally:
+            if os.path.exists(input_path):
+                try:
+                    os.remove(input_path)
+                except:
+                    pass
+
+    # =========================================================================
+    # 4. Markdown 生成
+    # =========================================================================
+    def generate_markdown(self, nodes, is_smart_active=True):
+        nodes = sorted(list(nodes))
+        md = ["# Node Connections", ""]
+        if is_smart_active: md.append("> 🌀 Smart Trace Active\n")
+
+        for node in nodes:
+            typ = self._get_smart_type(node)
+            short = node.split('|')[-1]
+            md.append(f"### `{short}` ({typ})")
+
+            ins = self._get_connections(node, source=True, destination=False)
+            outs = self._get_connections(node, source=False, destination=True)
+            ins.sort(key=lambda x: x['my_attr'])
+            outs.sort(key=lambda x: x['my_attr'])
+
+            if not ins and not outs:
+                md.append("> *No connections.*\n")
+                continue
+
+            md.append("| Dir | My Attr | Connected Node | Other Attr |")
+            md.append("|:---:|:---|:---|:---|")
+            for x in ins: md.append(f"| ← | `{x['my_attr']}` | `{x['other_node']}` | `{x['other_attr']}` |")
+            for x in outs: md.append(f"| → | `{x['my_attr']}` | `{x['other_node']}` | `{x['other_attr']}` |")
+            md.append("")
+        return "\n".join(md)
+
+    # =========================================================================
+    # Helpers
+    # =========================================================================
+    def _mm_id(self, name):
+        return "n" + hashlib.md5(name.encode()).hexdigest()[:6]
+
+    def _get_smart_type(self, fullname):
+        try:
+            base_type = cmds.nodeType(fullname)
+            if base_type == 'transform':
+                shapes = cmds.listRelatives(fullname, shapes=True)
+                if shapes: return 'controller'  # 假设有Shape的Transform是控制器
+            return base_type
+        except:
+            return "unknown"
+
+    def _get_connections(self, node, source=True, destination=True):
+        """
+        获取连接详情，【关键修改】：过滤掉自连接（Self-loops）。
+        """
         conns = cmds.listConnections(node, s=source, d=destination, plugs=True, connections=True) or []
         results = []
         for i in range(0, len(conns), 2):
@@ -82,8 +325,21 @@ class NodeAnalyserLogic:
                 ls_res = cmds.ls(other_node_part, long=True)
                 if ls_res: full_other_node = ls_res[0]
 
-            if cmds.nodeType(full_other_node) == 'objectSet':
+            # >>>>>>>>>> 关键修复开始 <<<<<<<<<<
+            # 检查1：完全匹配（全路径）
+            if full_other_node == node:
                 continue
+
+            # 检查2：如果传入的 node 不是全路径，对比短名
+            if full_other_node.split('|')[-1] == node.split('|')[-1]:
+                continue
+            # >>>>>>>>>> 关键修复结束 <<<<<<<<<<
+
+            # Filter objectSet
+            try:
+                if cmds.nodeType(full_other_node) == 'objectSet': continue
+            except:
+                pass
 
             short_other_node = full_other_node.split('|')[-1]
             results.append({
@@ -94,154 +350,13 @@ class NodeAnalyserLogic:
             })
         return results
 
-    def generate_markdown(self, nodes, include_trace_info=True):
-        """生成 Markdown 文本"""
-        nodes.sort()
-        md = ["# Node Connections", ""]
-        if include_trace_info:
-            md.append("> 🌀 Smart Trace Active\n")
-
-        for node in nodes:
-            typ = cmds.nodeType(node)
-            short = node.split('|')[-1]
-            md.append(f"### `{short}` ({typ})")
-
-            ins = self.get_connections(node, source=True, destination=False)
-            outs = self.get_connections(node, source=False, destination=True)
-            ins.sort(key=lambda x: x['my_attr'])
-            outs.sort(key=lambda x: x['my_attr'])
-
-            if not ins and not outs:
-                md.append("> *No connections.*\n")
-                continue
-
-            md.append("| Dir | My Attr | Connected Node | Other Attr |")
-            md.append("|:---:|:---|:---|:---|")
-            for x in ins:
-                md.append(f"| ← | `{x['my_attr']}` | `{x['other_node']}` | `{x['other_attr']}` |")
-            for x in outs:
-                md.append(f"| → | `{x['my_attr']}` | `{x['other_node']}` | `{x['other_attr']}` |")
-            md.append("")
-        return "\n".join(md)
-
-    def generate_mermaid(self, nodes, show_in=True, show_out=True):
-        """生成 Mermaid 代码"""
-        self.mm_lines = ["graph LR"]
-        # 基础样式
-        self.mm_lines.append("    classDef transform fill:#333,stroke:#fff,stroke-width:2px,color:#fff;")
-        self.mm_lines.append("    classDef joint fill:#2b6a99,stroke:#fff,stroke-width:2px,color:#fff;")
-        self.mm_lines.append("    classDef matrix fill:#483C6C,stroke:#a6a,stroke-width:1px,color:#fff;")
-        self.mm_lines.append("    classDef math fill:#2D5A4C,stroke:#4ea,stroke-width:1px,color:#fff;")
-        self.mm_lines.append("    classDef constraint fill:#8B4513,stroke:#fa0,stroke-width:1px,color:#fff;")
-        self.mm_lines.append(
-            "    classDef router fill:#222,stroke:#666,stroke-width:1px,color:#ccc,rx:5,ry:5,font-size:9pt;")
-
-        self.mm_nodes = set()
-        self.dynamic_classes = set()
-        raw_edges = []
-
-        # 收集节点和边
-        for node in nodes:
-            self._mm_add_node(node)
-            nid = self._mm_id(node)
-
-            if show_in:
-                ins = self.get_connections(node, source=True, destination=False)
-                for x in ins:
-                    oid = self._mm_id(x['other_node_full'])
-                    self._mm_add_node(x['other_node_full'])
-                    raw_edges.append({
-                        'src_id': oid, 'dst_id': nid,
-                        'src_attr': x['other_attr'], 'dst_attr': x['my_attr']
-                    })
-
-            if show_out:
-                outs = self.get_connections(node, source=False, destination=True)
-                for x in outs:
-                    oid = self._mm_id(x['other_node_full'])
-                    self._mm_add_node(x['other_node_full'])
-                    raw_edges.append({
-                        'src_id': nid, 'dst_id': oid,
-                        'src_attr': x['my_attr'], 'dst_attr': x['other_attr']
-                    })
-
-        # 路由逻辑 (合并相同输出属性的连线)
-        router_groups = {}
-        for edge in raw_edges:
-            key = (edge['src_id'], edge['src_attr'], edge['dst_attr'])
-            if key not in router_groups: router_groups[key] = []
-            router_groups[key].append(edge['dst_id'])
-
-        processed_lines = set()
-
-        for (src_id, src_attr, dst_attr), targets in router_groups.items():
-            targets = list(set(targets))
-
-            if len(targets) > 1:
-                # 1对多：创建路由节点
-                router_hash = hashlib.md5(f"{src_id}{src_attr}{dst_attr}".encode()).hexdigest()[:6]
-                router_id = f"r_{router_hash}"
-                router_label = f"{src_attr} → {dst_attr}".replace('"', "'")
-
-                line_def = f'    {router_id}(["{router_label}"]):::router'
-                self.mm_lines.append(line_def)
-
-                line1 = f'    {src_id} --- {router_id}'
-                if line1 not in processed_lines:
-                    self.mm_lines.append(line1)
-                    processed_lines.add(line1)
-
-                for dst_id in targets:
-                    line2 = f'    {router_id} --> {dst_id}'
-                    if line2 not in processed_lines:
-                        self.mm_lines.append(line2)
-                        processed_lines.add(line2)
-            else:
-                # 1对1
-                dst_id = targets[0]
-                label = f"{src_attr} → {dst_attr}".replace('"', "'")
-                line = f'    {src_id} -- "{label}" --> {dst_id}'
-                if line not in processed_lines:
-                    self.mm_lines.append(line)
-                    processed_lines.add(line)
-
-        return "\n".join(self.mm_lines)
-
-    # --- Mermaid Helpers ---
-    def _mm_id(self, name):
-        return "n" + hashlib.md5(name.encode()).hexdigest()[:6]
-
-    def _mm_add_node(self, fullname):
-        nid = self._mm_id(fullname)
-        if nid not in self.mm_nodes:
-            short = fullname.split("|")[-1]
-            try:
-                typ = cmds.nodeType(fullname)
-            except:
-                typ = "unknown"
-
-            style_class = "transform"
-            if typ == 'joint':
-                style_class = "joint"
-            elif typ in self.MATH_NODE_TYPES:
-                style_class = "matrix" if 'Matrix' in typ else "math"
-            elif 'Constraint' in typ:
-                style_class = "constraint"
-            elif typ == 'transform':
-                style_class = "transform"
-            else:
-                style_class = self._get_random_color_class(typ)
-
-            self.mm_lines.append(f'    {nid}["{short}<br><small>({typ})</small>"]:::{style_class}')
-            self.mm_nodes.add(nid)
-
-    def _get_random_color_class(self, node_type):
+    def _get_random_color_class(self, node_type, lines_list):
         class_name = f"type_{node_type}"
         if class_name not in self.dynamic_classes:
             hash_val = int(hashlib.md5(node_type.encode()).hexdigest(), 16)
             hue = hash_val % 360
-            r, g, b = colorsys.hls_to_rgb(hue / 360.0, 0.4, 0.6)
+            r, g, b = colorsys.hls_to_rgb(hue / 360.0, 0.4, 0.5)  # 稍微暗一点的随机色
             hex_color = f"#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}"
-            self.mm_lines.append(f"    classDef {class_name} fill:{hex_color},stroke:#fff,color:#fff;")
+            lines_list.append(f"    classDef {class_name} fill:{hex_color},stroke:#fff,color:#fff;")
             self.dynamic_classes.add(class_name)
         return class_name
