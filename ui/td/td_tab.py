@@ -5,6 +5,8 @@ from PySide6 import QtWidgets
 # 导入 td 相关的子模块 UI
 from ui.td.node_viewer_widget_ui import NodeViewerWidget
 from ui.td.node_analyser_widget_ui import NodeAnalyserWidget
+from ui.td.extended_node_viewer_widget_ui import ExtendedNodeViewerWidget
+from ui.td.extended_node_analyser_widget_ui import ExtendedNodeAnalyserWidget
 
 
 class TDTab(QtWidgets.QWidget):
@@ -37,7 +39,13 @@ class TDTab(QtWidgets.QWidget):
         self.node_analyser_widget = NodeAnalyserWidget()
         content_layout.addWidget(self.node_analyser_widget)
 
+        # 3. 扩展节点查看器
+        self.extended_node_viewer_widget = ExtendedNodeViewerWidget()
+        content_layout.addWidget(self.extended_node_viewer_widget)
 
+        # 4. 扩展节点分析器
+        self.extended_node_analyser_widget = ExtendedNodeAnalyserWidget()
+        content_layout.addWidget(self.extended_node_analyser_widget)
 
         # 底部拉伸
         content_layout.addStretch()

@@ -6,7 +6,7 @@ from ui.collapsible_widget import CollapsibleWidget
 
 class NodeViewerWidget(CollapsibleWidget):
     def __init__(self, parent=None):
-        super().__init__("2. 节点查看器 | Node Viewer", parent)
+        super().__init__("1. 节点查看器 | Node Viewer", parent)
         layout = QtWidgets.QVBoxLayout()
         self._create_content(layout)
         self.set_content_layout(layout)
@@ -24,7 +24,9 @@ class NodeViewerWidget(CollapsibleWidget):
         # 1. Isolate
         btn_iso = QtWidgets.QPushButton("Isolate Selected (Reset Graph)")
         btn_iso.clicked.connect(self.on_isolate_clicked)
-        btn_iso.setStyleSheet("background-color: #d65d5d; font-weight: bold; color: white; padding: 8px;")
+        btn_iso.setStyleSheet(
+            "background-color: #d65d5d; font-weight: bold; color: white; padding: 8px;"
+        )
         btn_iso.setToolTip("清空 Node Editor 并仅显示当前选择的节点")
 
         # 2. Add Inputs/Outputs
@@ -60,10 +62,12 @@ class NodeViewerWidget(CollapsibleWidget):
 
     def get_ne(self):
         """获取当前活动的 Node Editor 面板"""
-        pnls = cmds.getPanel(scriptType='nodeEditorPanel')
-        if not pnls: return None
+        pnls = cmds.getPanel(scriptType="nodeEditorPanel")
+        if not pnls:
+            return None
         for p in pnls:
-            if cmds.control(p, ex=1) and cmds.control(p, q=1, vis=1): return p
+            if cmds.control(p, ex=1) and cmds.control(p, q=1, vis=1):
+                return p
         return pnls[0] if pnls else None
 
     def on_expand_graph(self, up, down):
@@ -77,11 +81,15 @@ class NodeViewerWidget(CollapsibleWidget):
 
                 # 2. 过滤掉 objectSet 类型的节点
                 # (注意：listConnections 有时返回短名有时长名，nodeType 对两者都有效)
-                filtered_conns = [n for n in raw_conns if cmds.nodeType(n) != 'objectSet']
+                filtered_conns = [
+                    n for n in raw_conns if cmds.nodeType(n) != "objectSet"
+                ]
 
                 if filtered_conns:
                     # 3. 添加过滤后的节点并整理布局
-                    cmds.nodeEditor(pnl + "NodeEditorEd", e=1, addNode=filtered_conns, layout=1)
+                    cmds.nodeEditor(
+                        pnl + "NodeEditorEd", e=1, addNode=filtered_conns, layout=1
+                    )
             except Exception as e:
                 print(f"Error expanding graph: {e}")
 
@@ -99,7 +107,11 @@ class NodeViewerWidget(CollapsibleWidget):
         pnl = self.get_ne()
         if pnl:
             try:
-                cmds.nodeEditor(pnl + "NodeEditorEd", e=1, removeNode=cmds.ls(type='objectSet') or [])
+                cmds.nodeEditor(
+                    pnl + "NodeEditorEd",
+                    e=1,
+                    removeNode=cmds.ls(type="objectSet") or [],
+                )
             except:
                 pass
 

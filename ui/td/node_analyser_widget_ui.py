@@ -1,66 +1,14 @@
 # -*- coding: utf-8 -*-
 import maya.cmds as cmds
-import os
-from PySide6 import QtWidgets, QtCore, QtGui
+from PySide6 import QtWidgets
+
+try:
+    from auroraview import QtWebView
+except ImportError:
+    QtWebView = None
+    print("AuroraView not found. Web Render will be disabled.")
 from ui.collapsible_widget import CollapsibleWidget
 from core.logic.td.node_analyser_logic import NodeAnalyserLogic
-
-
-# =========================================================================
-# Graphics View (Modified for Image Display)
-# =========================================================================
-class NodeGraphView(QtWidgets.QGraphicsView):
-    """
-    修改后的视图，不再手动绘制节点，而是直接显示 mmdc 生成的图片。
-    保留了缩放和拖拽功能。
-    """
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.scene = QtWidgets.QGraphicsScene(self)
-        self.setScene(self.scene)
-        self.setBackgroundBrush(QtGui.QColor("#1e1e1e"))
-
-        # 交互设置
-        self.setRenderHints(QtGui.QPainter.Antialiasing | QtGui.QPainter.SmoothPixmapTransform)
-        self.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
-        self.setTransformationAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
-        self.setResizeAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
-        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        self.setFrameShape(QtWidgets.QFrame.NoFrame)
-
-        self._current_pixmap_item = None
-
-    def wheelEvent(self, event):
-        factor = 1.15
-        if event.angleDelta().y() > 0:
-            self.scale(factor, factor)
-        else:
-            self.scale(1 / factor, 1 / factor)
-
-    def display_image(self, image_path):
-        """
-        加载并显示 mmdc 生成的图片
-        """
-        self.scene.clear()
-        self._current_pixmap_item = None
-
-        if not image_path or not os.path.exists(image_path):
-            # 如果没有图片，显示提示文本
-            text = self.scene.addText("No Graph Generated", QtGui.QFont("Segoe UI", 12))
-            text.setDefaultTextColor(QtGui.QColor("#666"))
-            return
-
-        # 加载图片
-        pixmap = QtGui.QPixmap(image_path)
-        self._current_pixmap_item = self.scene.addPixmap(pixmap)
-
-        # 自动聚焦
-        self.scene.setSceneRect(self.scene.itemsBoundingRect())
-        QtCore.QTimer.singleShot(0, lambda: self.fitInView(self.scene.sceneRect(), QtCore.Qt.KeepAspectRatio))
-        # 稍微缩小一点，留出边距
-        self.scale(0.95, 0.95)
 
 
 # =========================================================================
@@ -68,12 +16,15 @@ class NodeGraphView(QtWidgets.QGraphicsView):
 # =========================================================================
 class NodeAnalyserWidget(CollapsibleWidget):
     def __init__(self, parent=None):
-        super().__init__("3. 节点分析器 | Node Analyser", parent)
+        super().__init__("2. 节点分析器 | Node Analyser", parent)
         self.logic = NodeAnalyserLogic()
 
         layout = QtWidgets.QVBoxLayout()
         self._create_content(layout)
         self.set_content_layout(layout)
+
+        # Keep reference to the window to prevent GC
+        self.web_view_window = None
 
     def _create_content(self, layout):
         # Options
@@ -90,7 +41,7 @@ class NodeAnalyserWidget(CollapsibleWidget):
         opt_layout.addStretch()
         layout.addLayout(opt_layout)
 
-        # Tabs (Layout Unchanged)
+        # Tabs
         self.tabs = QtWidgets.QTabWidget()
         self.tabs.setStyleSheet("""
             QTabWidget::pane { border: 1px solid #444; background-color: #1e1e1e; }
@@ -100,35 +51,46 @@ class NodeAnalyserWidget(CollapsibleWidget):
 
         self.txt_md = QtWidgets.QTextEdit()
         self.txt_md.setReadOnly(True)
-        self.txt_md.setStyleSheet("background-color: #1e1e1e; color: #d4d4d4; font-family: Consolas; font-size: 11px;")
+        self.txt_md.setStyleSheet(
+            "background-color: #1e1e1e; color: #d4d4d4; font-family: Consolas; font-size: 11px;"
+        )
 
         self.txt_mm = QtWidgets.QTextEdit()
         self.txt_mm.setReadOnly(True)
-        self.txt_mm.setStyleSheet("background-color: #1e1e1e; color: #aaddff; font-family: Consolas; font-size: 11px;")
-
-        # 将原来的 Native Graph View 替换为 图片查看模式的 View
-        self.graph_view = NodeGraphView()
+        self.txt_mm.setStyleSheet(
+            "background-color: #1e1e1e; color: #aaddff; font-family: Consolas; font-size: 11px;"
+        )
 
         self.tabs.addTab(self.txt_md, "📝 Markdown")
         self.tabs.addTab(self.txt_mm, "💻 Mermaid")
-        self.tabs.addTab(self.graph_view, "📊 Node Graph (MMDC)")
-        self.tabs.setCurrentIndex(2)
-        self.tabs.setMinimumHeight(400)
+        self.tabs.setCurrentIndex(0)
+        self.tabs.setMinimumHeight(300)
         layout.addWidget(self.tabs)
 
         # Buttons
         btn_layout = QtWidgets.QHBoxLayout()
         self.btn_gen = QtWidgets.QPushButton("🚀 开始分析 (Generate)")
-        self.btn_gen.setStyleSheet("background-color: #5285a6; color: white; padding: 6px; font-weight: bold;")
+        self.btn_gen.setStyleSheet(
+            "background-color: #5285a6; color: white; padding: 6px; font-weight: bold;"
+        )
         self.btn_export = QtWidgets.QPushButton("📋 复制/截图 (Export)")
-        self.btn_export.setStyleSheet("background-color: #444; color: white; padding: 6px;")
+        self.btn_export.setStyleSheet(
+            "background-color: #444; color: white; padding: 6px;"
+        )
+
+        self.btn_web = QtWidgets.QPushButton("🌐 Web Render")
+        self.btn_web.setStyleSheet(
+            "background-color: #e67e22; color: white; padding: 6px; font-weight: bold;"
+        )
 
         btn_layout.addWidget(self.btn_gen)
         btn_layout.addWidget(self.btn_export)
+        btn_layout.addWidget(self.btn_web)
         layout.addLayout(btn_layout)
 
         self.btn_gen.clicked.connect(self._on_generate)
         self.btn_export.clicked.connect(self._on_export)
+        self.btn_web.clicked.connect(self._on_web_render)
 
     def _on_generate(self):
         sel = cmds.ls(sl=1, long=True)
@@ -136,39 +98,26 @@ class NodeAnalyserWidget(CollapsibleWidget):
             self.txt_md.setText("Select nodes first.")
             return
 
-        # 1. 基础数据准备 (所有模式都需要)
-        nodes = self.logic.get_expanded_selection(sel, smart_trace=self.chk_smart.isChecked())
+        # 1. 基础数据准备
+        nodes = self.logic.get_expanded_selection(
+            sel, smart_trace=self.chk_smart.isChecked()
+        )
 
-        # 2. 获取当前 Tab 索引 (0: Markdown, 1: Mermaid Code, 2: Graph Image)
+        # 2. 获取当前 Tab 索引
         current_idx = self.tabs.currentIndex()
 
-        # 3. 按需生成 (只执行当前 Tab 对应的逻辑)
+        # 3. 按需生成
         if current_idx == 0:
-            # --- Markdown 模式 ---
             md_text = self.logic.generate_markdown(nodes, self.chk_smart.isChecked())
             self.txt_md.setText(md_text)
             print("Generated Markdown only.")
 
         elif current_idx == 1:
-            # --- Mermaid Text 模式 ---
-            mm_text = self.logic.generate_mermaid(nodes, self.chk_in.isChecked(), self.chk_out.isChecked())
+            mm_text = self.logic.generate_mermaid(
+                nodes, self.chk_in.isChecked(), self.chk_out.isChecked()
+            )
             self.txt_mm.setText(mm_text)
             print("Generated Mermaid Text only.")
-
-        elif current_idx == 2:
-            # --- Graph Image 模式 ---
-            # 图形模式需要先生成 Mermaid 文本，再渲染
-            mm_text = self.logic.generate_mermaid(nodes, self.chk_in.isChecked(), self.chk_out.isChecked())
-            # 同时更新一下 Mermaid 文本框(可选)，方便用户切回去看
-            self.txt_mm.setText(mm_text)
-
-            try:
-                # 调用耗时的渲染过程
-                image_path = self.logic.render_mermaid_to_image(mm_text)
-                self.graph_view.display_image(image_path)
-                print(f"Generated Graph Image only: {image_path}")
-            except Exception as e:
-                cmds.warning(f"Render Failed: {e}")
 
     def _on_export(self):
         idx = self.tabs.currentIndex()
@@ -181,21 +130,71 @@ class NodeAnalyserWidget(CollapsibleWidget):
         elif idx == 1:
             cb.setText(self.txt_mm.toPlainText())
             msg = "Mermaid Code Copied"
-        elif idx == 2:
-            # 针对图片的复制逻辑
-            scene = self.graph_view.scene
-            if scene.items():
-                rect = scene.itemsBoundingRect()
-                image = QtGui.QImage(rect.size().toSize(), QtGui.QImage.Format_ARGB32)
-                image.fill(QtGui.QColor("#1e1e1e"))
-                painter = QtGui.QPainter(image)
-                painter.setRenderHint(QtGui.QPainter.Antialiasing)
-                scene.render(painter, QtCore.QRectF(image.rect()), rect)
-                painter.end()
-                cb.setImage(image)
-                msg = "Graph Image Copied"
-            else:
-                msg = "No Graph to Copy"
 
         if msg:
-            cmds.inViewMessage(amg=f'<span style=\"color: #00FF00;\">{msg}</span>', pos='midCenter', fade=True)
+            cmds.inViewMessage(
+                amg=f'<span style="color: #00FF00;">{msg}</span>',
+                pos="midCenter",
+                fade=True,
+            )
+
+    def _on_web_render(self):
+        """
+        Generate Mermaid text and render it using AuroraView (QtWebView).
+        """
+        if QtWebView is None:
+            cmds.warning("AuroraView module is not installed. Cannot render.")
+            return
+
+        sel = cmds.ls(sl=1, long=True)
+        if not sel:
+            self.txt_md.setText("Select nodes first.")
+            return
+
+        # 1. 基础数据准备
+        nodes = self.logic.get_expanded_selection(
+            sel, smart_trace=self.chk_smart.isChecked()
+        )
+
+        # 2. 生成 Mermaid 代码
+        mm_text = self.logic.generate_mermaid(
+            nodes, self.chk_in.isChecked(), self.chk_out.isChecked()
+        )
+        self.txt_mm.setText(mm_text)
+
+        # 3. 生成 HTML
+        html_content = self.logic.generate_mermaid_html(mm_text)
+
+        # 4. AuroraView 渲染
+        try:
+            # 如果窗口已存在，先关闭 (或者重用，这里选择重建以保持状态清洁)
+            if self.web_view_window:
+                self.web_view_window.close()
+                self.web_view_window.deleteLater()
+
+            # 创建独立的 Dialog 窗口
+            self.web_view_window = QtWidgets.QDialog(self)
+            self.web_view_window.setWindowTitle("Mermaid Graph (AuroraView)")
+            self.web_view_window.resize(1000, 800)
+
+            # 布局
+            dlg_layout = QtWidgets.QVBoxLayout(self.web_view_window)
+            dlg_layout.setContentsMargins(0, 0, 0, 0)
+
+            # 创建 WebView
+            # 注意: 可以在这里启用 dev_tools=True 方便调试
+            self.webview = QtWebView(self.web_view_window, dev_tools=False)
+            dlg_layout.addWidget(self.webview)
+
+            # 加载 HTML
+            self.webview.load_html(html_content)
+
+            # 显示
+            self.web_view_window.show()
+            print("Opened Graph in AuroraView.")
+
+        except Exception as e:
+            cmds.warning(f"AuroraView Render Failed: {e}")
+            import traceback
+
+            traceback.print_exc()
