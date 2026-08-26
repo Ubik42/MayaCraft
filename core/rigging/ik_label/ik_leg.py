@@ -1,11 +1,11 @@
 # core/rigging/ik_label/ik_leg.py
 # -*- coding: utf-8 -*-
 
-from core.rigging.basic import ikfk
-from core import controller
-from core import tool
+from MayaCraft.core.rigging.basic import ikfk
+from MayaCraft.core import controller
+from MayaCraft.core import tool
 import maya.cmds as cmds
-from core.rigging.base import RigObject, RigTask
+from MayaCraft.core.rigging.base import RigObject, RigTask
 
 
 class IKLegModule(RigObject):

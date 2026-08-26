@@ -5,8 +5,8 @@ controller_widget_logic.py
 连接 UI 与 core.controller。
 """
 import os
-from PySide6 import QtGui
-from core import controller
+from MayaCraft.compat.qt import QtGui
+from MayaCraft.core import controller
 
 
 def refresh_shape_list():

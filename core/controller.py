@@ -5,7 +5,7 @@ import os
 import math
 
 # 导入文件处理通用模块
-from utils import file_handler
+from MayaCraft.utils import file_handler
 
 """
 controller.py
@@ -170,7 +170,7 @@ def set_color(rgb_color):
                 cmds.setAttr(f"{item}.overrideEnabled", 1)
                 cmds.setAttr(f"{item}.overrideRGBColors", 1)
                 cmds.setAttr(f"{item}.overrideColorRGB", rgb_color[0], rgb_color[1], rgb_color[2])
-            except:
+            except Exception:
                 pass
     return len(selection)
 
@@ -200,7 +200,7 @@ def apply_stored_shape(target_node, shape_name):
                 shape_data = json.load(f)
             replace_shape(target_node, shape_data)
             return True
-        except:
+        except Exception:
             pass
 
     return False
@@ -233,7 +233,7 @@ def replace_shape(target_node, shape_data_list):
         if form > 0:
             try:
                 cmds.closeCurve(tmp_curve, ch=False, ps=0, rpo=1, bb=0.5, bki=0, p=0.1)
-            except:
+            except Exception:
                 pass
 
         # 颜色处理
@@ -277,7 +277,7 @@ def replace_shape(target_node, shape_data_list):
             if shp != desired_name:
                 try:
                     cmds.rename(shp, desired_name)
-                except:
+                except Exception:
                     pass
 
 

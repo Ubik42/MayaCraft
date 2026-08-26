@@ -1,12 +1,13 @@
-# core/rigging/ik_label/foot_roll.py
-from .base import BaseRigModule
+"""Reserved entry point for a future foot-roll rig module.
+
+The previous placeholder imported a nonexistent ``base`` module and crashed
+package discovery even though it was never registered. Keep an explicit stub
+so old imports fail only when someone tries to use the unfinished feature.
+"""
 
 
-class FootRollModule(BaseRigModule):
-    def build(self):
-        print(f"[{self.side} FootRoll] Building placeholder...")
-        # 暂时留空，防止报错
-        pass
-
-    def connect(self):
-        pass
+class FootRollModule:
+    def __init__(self, *args, **kwargs):
+        raise NotImplementedError(
+            "FootRollModule is not implemented or registered in MayaCraft 2."
+        )

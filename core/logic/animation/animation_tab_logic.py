@@ -8,7 +8,7 @@ import maya.cmds as cmds
 import json
 import os
 import shutil
-from utils import file_handler
+from MayaCraft.utils import file_handler
 
 
 # ========================================================
@@ -85,7 +85,7 @@ def save_pose(pose_name):
             try:
                 val = cmds.getAttr(f"{node}.{attr}")
                 node_data[attr] = val
-            except:
+            except Exception:
                 pass
 
         if node_data:
@@ -124,7 +124,7 @@ def save_pose(pose_name):
             percent=100,
             widthHeight=(200, 200)  # 小缩略图
         )
-    except:
+    except Exception:
         print("缩略图生成失败，但数据已保存。")
 
     # 恢复选中
@@ -211,7 +211,7 @@ def apply_pose(pose_name, blend_percent=100.0):
                                 final_val = target_val if weight > 0.5 else current_val
 
                             cmds.setAttr(full_attr, final_val)
-                        except:
+                        except Exception:
                             pass
     finally:
         cmds.undoInfo(closeChunk=True)

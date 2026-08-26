@@ -4,7 +4,7 @@ import pymel.core as pm
 
 # 依然要做安全检查
 try:
-    from core.face.utils import actions
+    from MayaCraft.core.face.utils import actions
 except ImportError:
     actions = None
 

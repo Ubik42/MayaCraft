@@ -4,7 +4,7 @@ import maya.cmds as cmds
 from typing import Dict, List, Union, Any
 
 # 引入 Attribute 包以获取具体的属性类配置
-import core.rigging.attribute as attribute_pkg
+import MayaCraft.core.rigging.attribute as attribute_pkg
 
 
 # -----------------------------------------------------------------------------

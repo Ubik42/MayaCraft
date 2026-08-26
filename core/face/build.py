@@ -1,7 +1,7 @@
 import pymel.core as pm
 
-from core.face.utils import actions
-from core.face.systems import bulge, brow, cheek, nose, eye, lip, jaw
+from MayaCraft.core.face.utils import actions
+from MayaCraft.core.face.systems import bulge, brow, cheek, nose, eye, lip, jaw
 
 
 def build():

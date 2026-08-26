@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 import maya.cmds as cmds
 import maya.api.OpenMaya as om
-from core.rigging.base import RigObject, RigTask
-from core import tool
-from core import controller
+from MayaCraft.core.rigging.base import RigObject, RigTask
+from MayaCraft.core import tool
+from MayaCraft.core import controller
 
 
 class AimAttribute(RigObject):

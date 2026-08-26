@@ -1,8 +1,8 @@
 # core/rigging/attribute/global_orient.py
 # -*- coding: utf-8 -*-
 import maya.cmds as cmds
-from core.rigging.base import RigObject, RigTask
-from core import tool
+from MayaCraft.core.rigging.base import RigObject, RigTask
+from MayaCraft.core import tool
 
 
 class GlobalOrientAttribute(RigObject):

@@ -3,8 +3,8 @@
 import maya.cmds as cmds
 import maya.api.OpenMaya as om
 import math
-from core.rigging.base import RigObject, RigTask
-from core import tool
+from MayaCraft.core.rigging.base import RigObject, RigTask
+from MayaCraft.core import tool
 
 
 class InbetweenAttribute(RigObject):
@@ -101,7 +101,7 @@ class InbetweenAttribute(RigObject):
                 if not curr_p_check or tool.get_short_name(curr_p_check[0]) != tool.get_short_name(current_parent):
                     try:
                         cmds.parent(part_joint, current_parent)
-                    except:
+                    except Exception:
                         pass
             else:
                 cmds.select(clear=True)

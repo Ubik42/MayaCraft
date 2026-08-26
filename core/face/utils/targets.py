@@ -1,5 +1,5 @@
 import pymel.core as pm
-from core.face.utils import actions
+from MayaCraft.core.face.utils import actions
 
 
 # sculptTarget -e -regenerate true -target 3 LipBS

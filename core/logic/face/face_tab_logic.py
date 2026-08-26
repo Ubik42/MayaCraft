@@ -5,9 +5,9 @@ import maya.cmds as cmds
 # 导入 MFace 核心模块
 # 确保 core/face/__init__.py 存在，且文件夹内包含相应 .py 文件
 # try:
-from core.face import selection, build
-from core.face.utils import actions
-from core.face.systems import bulge, brow, cheek, nose, eye, lip, jaw
+from MayaCraft.core.face import selection, build
+from MayaCraft.core.face.utils import actions
+from MayaCraft.core.face.systems import bulge, brow, cheek, nose, eye, lip, jaw
 # except ImportError as e:
 #     print(f"MFace Core Import Error: {e}")
 #     selection = None

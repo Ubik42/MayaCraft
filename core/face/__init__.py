@@ -5,12 +5,12 @@ import importlib
 # 1. 模块导入 (使用相对导入语法)
 # ==========================================
 # 注意：这里定义的变量名 (例如 weights, targets) 必须与下面 reload 中的名字完全一致
-from core.face.utils import control, weights, actions, units, targets
+from MayaCraft.core.face.utils import control, weights, actions, units, targets
 
 from . import selection # 定位器创建
 
 # 部位模块
-from core.face.systems import bulge, brow, cheek, nose, eye, lip, jaw
+from MayaCraft.core.face.systems import bulge, brow, cheek, nose, eye, lip, jaw
 
 # 总构建模块
 from . import build

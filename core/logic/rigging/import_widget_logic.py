@@ -10,7 +10,7 @@ import os
 from typing import List
 
 # 假设 utils 文件夹与 core 文件夹在同一级
-from utils import file_handler
+from MayaCraft.utils import file_handler
 
 
 # --- 示例相关 ---

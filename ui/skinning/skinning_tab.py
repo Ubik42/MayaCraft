@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
-from PySide6 import QtWidgets, QtCore
-from core.logic.skinning import skinning_tab_logic as logic
+from MayaCraft.compat.qt import QtWidgets, QtCore
+from MayaCraft.core.logic.skinning import skinning_tab_logic as logic
 
 
 class SkinningTab(QtWidgets.QWidget):
@@ -36,7 +36,7 @@ class SkinningTab(QtWidgets.QWidget):
     # ---------------------------------------------------------------------------
     def _create_weight_io_ui(self):
         """创建权重导入/导出UI"""
-        group = QtWidgets.QGroupBox("1. 权重导入/导出 | Weight I/O")
+        group = QtWidgets.QGroupBox("1. 权重导入与导出")
         layout = QtWidgets.QVBoxLayout(group)
 
         # --- 使用标准控件替代 FilePathWidget ---
@@ -75,7 +75,7 @@ class SkinningTab(QtWidgets.QWidget):
 
     def _create_weight_utils_ui(self):
         """创建权重工具集UI"""
-        group = QtWidgets.QGroupBox("2. 权重工具集 | Weight Utilities")
+        group = QtWidgets.QGroupBox("2. 权重工具集")
         layout = QtWidgets.QGridLayout(group)
 
         self.copy_weights_btn = QtWidgets.QPushButton("复制权重")
@@ -96,7 +96,7 @@ class SkinningTab(QtWidgets.QWidget):
 
     def _create_deformer_tools_ui(self):
         """创建变形器工具UI (占位)"""
-        group = QtWidgets.QGroupBox("3. 变形器工具 | Deformer Utilities")
+        group = QtWidgets.QGroupBox("3. 变形器工具")
         layout = QtWidgets.QVBoxLayout(group)
 
         self.delta_mush_btn = QtWidgets.QPushButton("添加 Delta Mush")

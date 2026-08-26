@@ -1,0 +1,1 @@
+"""Host compatibility helpers."""

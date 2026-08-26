@@ -1,0 +1,1 @@
+python("import os; p=os.path.join(os.environ['MAYACRAFT_VALIDATION_ROOT'],'tests','maya_gui_workspace_validation.py'); exec(compile(open(p, encoding='utf-8').read(), p, 'exec'))");

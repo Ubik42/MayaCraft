@@ -95,7 +95,7 @@ def set_draw(
         if visible is not None:
             try:
                 cmds.setAttr(f"{node}.visibility", visible)
-            except:
+            except Exception:
                 pass
 
         shape_nodes = cmds.listRelatives(node, shapes=True, fullPath=True) or []

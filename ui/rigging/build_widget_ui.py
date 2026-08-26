@@ -1,21 +1,30 @@
 # ui/rigging/build_widget_ui.py
 # -*- coding: utf-8 -*-
 
-from PySide6 import QtWidgets, QtCore, QtGui
+from MayaCraft.compat.qt import QtWidgets, QtCore, QtGui
 from maya import cmds
 
 # Backend Logic
-from core.logic.rigging import build_widget_logic as logic
-from core.rigging import build
-from ui.collapsible_widget import CollapsibleWidget
+from MayaCraft.core.logic.rigging import build_widget_logic as logic
+from MayaCraft.core.rigging import build
+from MayaCraft.ui.collapsible_widget import CollapsibleWidget
 
 # Configuration Imports
-import core.rigging.ik_label as ik_module
-import core.rigging.attribute as attribute_pkg
+import MayaCraft.core.rigging.ik_label as ik_module
+import MayaCraft.core.rigging.attribute as attribute_pkg
 
 # Retrieve configurations
 MODULE_SLOTS = ik_module.get_all_slots()
 ATTR_LIST = attribute_pkg.get_all_slot_names()
+
+DISPLAY_NAMES = {
+    "IK Arm": "IK 手臂", "IK Leg": "IK 腿部", "IK Spine": "IK 脊柱",
+    "Root": "根部", "Spine": "脊柱", "Chest": "胸部", "Shoulder": "肩部",
+    "Hand": "手部", "Hip": "髋部", "Foot": "足部",
+    "twist/bendy": "扭转 / 柔性", "inbetween": "中间关节", "segScaleComp": "分段缩放补偿",
+    "global": "全局朝向", "aim": "瞄准", "twistJoints": "扭转关节", "bendyCtrls": "柔性控制器",
+    "inbetweenJoints": "中间关节", "unTwister": "反扭转", "segScaleComp": "分段缩放补偿",
+}
 
 
 class SlotButton(QtWidgets.QPushButton):
@@ -71,9 +80,9 @@ class SlotButton(QtWidgets.QPushButton):
             if self.is_attribute:
                 text = short_node
             else:
-                text = f"{self.label_name}:  {short_node}"
+                text = f"{DISPLAY_NAMES.get(self.label_name, self.label_name)}：{short_node}"
         else:
-            text = self.label_name
+            text = DISPLAY_NAMES.get(self.label_name, self.label_name)
 
         self.setText(text)
 
@@ -112,7 +121,7 @@ class SlotButton(QtWidgets.QPushButton):
 
 class BuildWidget(CollapsibleWidget):
     def __init__(self, parent=None):
-        super().__init__("2. Joints & Modules", parent)
+        super().__init__("2. 关节与模块", parent)
 
         # Track the currently clicked slot for visual highlighting
         self.current_active_slot = None
@@ -127,14 +136,14 @@ class BuildWidget(CollapsibleWidget):
 
     def _create_content(self, layout):
         # --- 1. Joint Labels Section ---
-        layout.addWidget(QtWidgets.QLabel("<b>Joint Labels (Modules)</b>"))
+        layout.addWidget(QtWidgets.QLabel("<b>关节标签（模块）</b>"))
         self.label_tree = self._create_tree_widget()
         self.label_tree.setMinimumHeight(300)  # Increased Height
         self._init_groups_generic(self.label_tree, MODULE_SLOTS, is_attribute=False)
         layout.addWidget(self.label_tree)
 
         # --- 2. Attributes Section (Single Column) ---
-        layout.addWidget(QtWidgets.QLabel("<b>Attributes</b>"))
+        layout.addWidget(QtWidgets.QLabel("<b>属性模块</b>"))
         self.attr_tree = self._create_tree_widget()
         self.attr_tree.setMinimumHeight(400)  # Increased Height significantly
         layout.addWidget(self.attr_tree)
@@ -144,7 +153,7 @@ class BuildWidget(CollapsibleWidget):
         bottom_layout.setContentsMargins(0, 10, 0, 0)
 
         # Build Button
-        self.run_build_btn = QtWidgets.QPushButton("RUN BUILD")
+        self.run_build_btn = QtWidgets.QPushButton("运行构建")
         self.run_build_btn.setMinimumHeight(40)
         self.run_build_btn.setStyleSheet(
             "background-color: #5D4037; color: white; font-weight: bold; font-size: 14px; border-radius: 4px;"
@@ -152,7 +161,7 @@ class BuildWidget(CollapsibleWidget):
         self.run_build_btn.clicked.connect(self._on_run_build)
 
         # Refresh Button
-        self.btn_refresh = QtWidgets.QPushButton("Refresh")
+        self.btn_refresh = QtWidgets.QPushButton("刷新")
         self.btn_refresh.setMinimumHeight(40)
         self.btn_refresh.setFixedWidth(80)
         self.btn_refresh.setStyleSheet(
@@ -184,7 +193,7 @@ class BuildWidget(CollapsibleWidget):
             header_layout = QtWidgets.QHBoxLayout(header_widget)
             header_layout.setContentsMargins(0, 5, 0, 5)
 
-            lbl = QtWidgets.QLabel(group_name)
+            lbl = QtWidgets.QLabel(DISPLAY_NAMES.get(group_name, group_name))
             lbl.setStyleSheet("font-weight: bold; color: #BBB;")
 
             # Add Row Button

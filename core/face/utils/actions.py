@@ -1,5 +1,5 @@
 # coding:utf-8
-from core.face.utils import control
+from MayaCraft.core.face.utils import control
 import pymel.core as pm
 
 

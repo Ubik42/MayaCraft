@@ -1,7 +1,7 @@
 import pymel.core as pm
 
-from core.face.utils import control
-from core.face.utils import actions
+from MayaCraft.core.face.utils import control
+from MayaCraft.core.face.utils import actions
 
 
 def tooth_rig(name, follow, radius, **kwargs):

@@ -1,7 +1,7 @@
 # collapsible_widget.py
 # -*- coding: utf-8 -*-
 
-from PySide6 import QtWidgets, QtCore, QtGui
+from MayaCraft.compat.qt import QtWidgets, QtCore, QtGui
 
 
 class CollapsibleWidget(QtWidgets.QWidget):

@@ -4,16 +4,16 @@
 general_tab_ui.py
 通用功能标签页的前端UI实现。
 """
-from PySide6 import QtWidgets
-from PySide6.QtWidgets import (
+from MayaCraft.compat.qt import QtWidgets
+from MayaCraft.compat.qt import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,
     QListWidget, QGroupBox, QComboBox, QSlider, QLabel, QCheckBox,
     QFormLayout, QListWidgetItem
 )
-from PySide6.QtCore import Qt
+from MayaCraft.compat.qt import Qt
 
 # 导入后端逻辑模块
-from core.logic import general_tab_logic
+from MayaCraft.core.logic import general_tab_logic
 
 
 class GeneralTab(QWidget):
@@ -44,21 +44,21 @@ class GeneralTab(QWidget):
         self.align_btn = QPushButton("定位")
 
         # --- [修改] 命名工具 ---
-        self.rename_group = QGroupBox("命名工具 (Rename Tools)")
+        self.rename_group = QGroupBox("命名工具")
 
         # 前后缀
         self.prefix_le = QLineEdit()
-        self.prefix_le.setPlaceholderText("前缀 (Prefix)")
+        self.prefix_le.setPlaceholderText("前缀")
         self.suffix_le = QLineEdit()
-        self.suffix_le.setPlaceholderText("后缀 (Suffix)")
-        self.apply_affix_btn = QPushButton("批量添加前后缀 (Apply)")
+        self.suffix_le.setPlaceholderText("后缀")
+        self.apply_affix_btn = QPushButton("批量添加前后缀")
 
         # 查找替换
         self.search_le = QLineEdit()
-        self.search_le.setPlaceholderText("查找内容 (Search)")
+        self.search_le.setPlaceholderText("查找内容")
         self.replace_le = QLineEdit()
-        self.replace_le.setPlaceholderText("替换为 (Replace)")
-        self.replace_btn = QPushButton("批量替换 (Replace)")
+        self.replace_le.setPlaceholderText("替换为")
+        self.replace_btn = QPushButton("批量替换")
 
         # --- 变换工具 ---
         self.transform_group = QGroupBox("变换工具")
@@ -77,7 +77,7 @@ class GeneralTab(QWidget):
         self.joint_size_slider.setMaximum(200)
         self.joint_size_slider.setValue(100)
         self.joint_size_label = QLabel("1.0")
-        self.joint_axis_cb = QCheckBox("显示局部坐标轴 (Joint Axis)")
+        self.joint_axis_cb = QCheckBox("显示关节局部坐标轴")
         self.create_joint_btn = QPushButton("根据几何生成骨骼位置 (选中项中心)")
 
     def _create_layouts(self):

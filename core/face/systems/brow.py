@@ -1,8 +1,8 @@
 # coding:utf-8
 
 import pymel.core as pm
-from core.face.utils import control
-from core.face.utils import actions
+from MayaCraft.core.face.utils import control
+from MayaCraft.core.face.utils import actions
 
 
 def brow_second_con(n, p, sx, radius, joint_group, SelectionBrowRoll, **kwargs):

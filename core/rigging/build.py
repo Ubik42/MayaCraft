@@ -4,23 +4,23 @@ import traceback
 from functools import partial
 
 # Import Factory
-import core.rigging.ik_label as rig_module
-import core.rigging.attribute as attribute_pkg
+import MayaCraft.core.rigging.ik_label as rig_module
+import MayaCraft.core.rigging.attribute as attribute_pkg
 
 # Import Base System
-from core.rigging.base import RigTask
+from MayaCraft.core.rigging.base import RigTask
 
 # Import Build Functions
-import core.rigging.build_func.build_structure as build_structure
-import core.rigging.build_func.build_joint as build_joint
-import core.rigging.build_func.build_main as build_main
-import core.rigging.build_func.build_base_fk as build_base_fk
-import core.rigging.build_func.build_utils as build_utils
+import MayaCraft.core.rigging.build_func.build_structure as build_structure
+import MayaCraft.core.rigging.build_func.build_joint as build_joint
+import MayaCraft.core.rigging.build_func.build_main as build_main
+import MayaCraft.core.rigging.build_func.build_base_fk as build_base_fk
+import MayaCraft.core.rigging.build_func.build_utils as build_utils
 
 
 class RigBuilder:  # Mixin/Inherit RigTask for get_priority helper? Or just add method
     def get_priority(self, key, default):
-        from core.rigging.base import PriorityConfig
+        from MayaCraft.core.rigging.base import PriorityConfig
 
         return PriorityConfig.get(key, default)
 

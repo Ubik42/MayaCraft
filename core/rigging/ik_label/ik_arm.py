@@ -2,11 +2,11 @@
 # -*- coding: utf-8 -*-
 from maya import cmds
 
-from core.rigging.basic import ikfk
-from core import controller
-from core import tool
-from core.rigging.base import RigObject, RigTask
-from core.rigging.attribute import stretchy
+from MayaCraft.core.rigging.basic import ikfk
+from MayaCraft.core import controller
+from MayaCraft.core import tool
+from MayaCraft.core.rigging.base import RigObject, RigTask
+from MayaCraft.core.rigging.attribute import stretchy
 
 
 class IKArmModule(RigObject):

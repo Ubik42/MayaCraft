@@ -1,8 +1,8 @@
 # core/rigging/attribute/seg_scale_comp.py
 # -*- coding: utf-8 -*-
 import maya.cmds as cmds
-from core.rigging.base import RigObject, RigTask
-from core import tool
+from MayaCraft.core.rigging.base import RigObject, RigTask
+from MayaCraft.core import tool
 
 
 class SegScaleCompAttribute(RigObject):

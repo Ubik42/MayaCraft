@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
 
-from PySide6 import QtWidgets, QtCore, QtGui
-from ui.collapsible_widget import CollapsibleWidget
+from MayaCraft.compat.qt import QtWidgets, QtCore, QtGui
+from MayaCraft.ui.collapsible_widget import CollapsibleWidget
 # 导入逻辑
-from core.logic.animation import curve_logic as logic
+from MayaCraft.core.logic.animation import curve_logic as logic
 
 
 class CurveWidget(CollapsibleWidget):
     """动画曲线编辑器小部件"""
 
     def __init__(self, parent=None):
-        super().__init__("3. 曲线工具 | Curve Tools", parent)
+        super().__init__("3. 曲线工具", parent)
 
         content_layout = QtWidgets.QVBoxLayout()
         self._create_content(content_layout)
@@ -31,7 +31,7 @@ class CurveWidget(CollapsibleWidget):
 
         for p in percentages:
             btn = QtWidgets.QPushButton(f"{p}%")
-            btn.setToolTip(f"Blend to {p}%")
+            btn.setToolTip(f"混合至 {p}%")
             btn.clicked.connect(lambda checked=False, val=p / 100.0: logic.tween_keys(val))
 
             if p == 0:
@@ -54,14 +54,14 @@ class CurveWidget(CollapsibleWidget):
         linear_layout = QtWidgets.QHBoxLayout(linear_group)
         linear_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.btn_over_left = QtWidgets.QPushButton("<< Overshoot")
+        self.btn_over_left = QtWidgets.QPushButton("<< 左侧过冲")
         self.btn_over_left.clicked.connect(lambda: logic.tween_keys(-0.2))
 
-        self.btn_linear = QtWidgets.QPushButton("Linear (50%)")
+        self.btn_linear = QtWidgets.QPushButton("线性 50%")
         self.btn_linear.setStyleSheet("background-color: #5285a6; color: white;")
         self.btn_linear.clicked.connect(lambda: logic.tween_keys(0.5))
 
-        self.btn_over_right = QtWidgets.QPushButton("Overshoot >>")
+        self.btn_over_right = QtWidgets.QPushButton("右侧过冲 >>")
         self.btn_over_right.clicked.connect(lambda: logic.tween_keys(1.2))
 
         linear_layout.addWidget(self.btn_over_left)
@@ -82,7 +82,7 @@ class CurveWidget(CollapsibleWidget):
         self.val_input.setSingleStep(0.1)
         self.btn_val_plus = QtWidgets.QPushButton("+")
 
-        val_group.addWidget(QtWidgets.QLabel("Value Offset:"))
+        val_group.addWidget(QtWidgets.QLabel("数值偏移："))
         val_group.addWidget(self.btn_val_minus)
         val_group.addWidget(self.val_input)
         val_group.addWidget(self.btn_val_plus)
@@ -94,9 +94,9 @@ class CurveWidget(CollapsibleWidget):
         # ============================================
         move_group = QtWidgets.QHBoxLayout()
 
-        self.btn_move_left = QtWidgets.QPushButton("< Time -1")
-        self.btn_move_right = QtWidgets.QPushButton("Time +1 >")
-        self.btn_zero = QtWidgets.QPushButton("Zero Key (0)")
+        self.btn_move_left = QtWidgets.QPushButton("< 时间 -1")
+        self.btn_move_right = QtWidgets.QPushButton("时间 +1 >")
+        self.btn_zero = QtWidgets.QPushButton("关键帧归零")
 
         move_group.addWidget(self.btn_move_left)
         move_group.addWidget(self.btn_zero)
@@ -114,23 +114,23 @@ class CurveWidget(CollapsibleWidget):
         # 5. 高级滑块模式 (自适应大小)
         # ============================================
         # 使用 GroupBox 包裹，让它视觉上更清晰，并允许垂直扩展
-        mode_group_box = QtWidgets.QGroupBox("高级模式 (Advanced Modes)")
+        mode_group_box = QtWidgets.QGroupBox("高级模式")
         mode_layout = QtWidgets.QHBoxLayout(mode_group_box)
 
         # --- 左侧列表 ---
         self.mode_list = QtWidgets.QListWidget()
         modes = [
-            "Pull Push",
-            "Noise",
-            "Ease In Out",
-            "Blend To Default",
-            "Blend To Neighbors",
-            "Blend To Mirror",
-            "Blend To Frame",
-            "Scale From Default",
-            "Scale From Average",
-            "Scale From Neighbor Left",
-            "Scale From Neighbor Right"
+            "拉近 / 推远",
+            "噪波",
+            "缓入缓出",
+            "混合至默认值",
+            "混合至相邻关键帧",
+            "混合至镜像值",
+            "混合至指定帧",
+            "从默认值缩放",
+            "从平均值缩放",
+            "从左侧相邻值缩放",
+            "从右侧相邻值缩放"
         ]
         self.mode_list.addItems(modes)
         self.mode_list.setCurrentRow(4)
@@ -146,7 +146,7 @@ class CurveWidget(CollapsibleWidget):
         self.mode_slider.setValue(50)
         self.mode_slider.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
 
-        self.lbl_slider_val = QtWidgets.QLabel("Factor: 50%")
+        self.lbl_slider_val = QtWidgets.QLabel("系数：50%")
         self.lbl_slider_val.setAlignment(QtCore.Qt.AlignCenter)
 
         # 垂直弹簧，确保滑块居中
@@ -187,7 +187,7 @@ class CurveWidget(CollapsibleWidget):
         logic.offset_value(val)
 
     def _on_slider_change(self, value):
-        self.lbl_slider_val.setText(f"Factor: {value}%")
+        self.lbl_slider_val.setText(f"系数：{value}%")
         current_item = self.mode_list.currentItem()
         if current_item:
             mode = current_item.text()

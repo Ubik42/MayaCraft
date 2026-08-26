@@ -1,16 +1,16 @@
 # ui/rigging/import_widget_ui.py
 # -*- coding: utf-8 -*-
 
-from PySide6 import QtWidgets
-from core.logic.rigging import import_widget_logic as logic
-from ui.collapsible_widget import CollapsibleWidget
+from MayaCraft.compat.qt import QtWidgets
+from MayaCraft.core.logic.rigging import import_widget_logic as logic
+from MayaCraft.ui.collapsible_widget import CollapsibleWidget
 
 
 class ImportWidget(CollapsibleWidget):
     """“预设与导入”功能块的UI类。"""
 
     def __init__(self, parent=None):
-        super().__init__("1. 预设与导入 | Presets & Import", parent)
+        super().__init__("1. 预设与导入", parent)
 
         content_layout = QtWidgets.QVBoxLayout()
         self._create_content(content_layout)

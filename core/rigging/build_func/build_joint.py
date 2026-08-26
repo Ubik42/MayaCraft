@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 import maya.cmds as cmds
-from core import tool
-from core.logic.rigging import build_widget_logic as logic
+from MayaCraft.core import tool
+from MayaCraft.core.logic.rigging import build_widget_logic as logic
 
 
 def process_skeleton(builder, ui_config: dict):
@@ -66,7 +66,7 @@ def process_skeleton(builder, ui_config: dict):
         try:
             tool.unlock_transform(node, visibility=True)
             cmds.setAttr(f"{node}.visibility", 0)
-        except:
+        except Exception:
             pass
 
     # 4. 处理命名 (_M/_R) 和 镜像准备

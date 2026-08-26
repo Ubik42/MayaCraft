@@ -116,7 +116,7 @@ def set_curve_radius(curve=None, radius=None):
     if radius is None:
         try:
             radius = pm.softSelect(q=1, ssd=1)
-        except:
+        except Exception:
             radius = 1.0
 
     distances = []

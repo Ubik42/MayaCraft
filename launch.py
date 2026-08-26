@@ -1,56 +1,96 @@
-# -*- coding: utf-8 -*-
-import sys
-from importlib import reload
-import maya.cmds as cmds
-import maya.OpenMayaUI as omui
-import shiboken6
-from PySide6 import QtWidgets
+"""MayaCraft's public Maya entry point.
 
-from ui import main_window
+Maya and Qt are imported only when :func:`run` is called. Package discovery,
+documentation builds, and offline tests therefore remain usable outside Maya.
+"""
 
-# --- 重载逻辑 (保持不变) ---
-from utils import reload_handler
+from __future__ import annotations
 
-reload(reload_handler)
-PACKAGES_TO_RELOAD = ["core", "ui", "utils"]
-for pkg_name in PACKAGES_TO_RELOAD:
-    if pkg_name in sys.modules:
-        reload_handler.reload_package(pkg_name)
+import importlib
+from typing import Any, Optional, Tuple
 
 
-# --- 运行入口，经过大量测试这就是最好的写法 ---
-def run():
-    workspace_control_name = "MayaCraftWorkspaceControl"
+WORKSPACE_CONTROL = "MayaCraftWorkspaceControl"
+_window: Optional[Any] = None
 
-    # 1. 彻底清除旧的
-    if cmds.workspaceControl(workspace_control_name, exists=True):
-        cmds.deleteUI(workspace_control_name)
 
-    # 2. 创建 Maya 面板
-    cmds.workspaceControl(workspace_control_name,
-                          label="MayaCraft",
-                          uiScript="pass",
-                          retain=False,
-                          floating=True)
+def _maya_modules() -> Tuple[Any, Any, Any, Any]:
+    """Load Maya/Qt bindings with one actionable compatibility error."""
+    try:
+        import maya.OpenMayaUI as omui
+        import maya.cmds as cmds
+        from MayaCraft.compat.qt import QtWidgets, wrap_instance
+    except ImportError as exc:
+        raise RuntimeError(
+            "MayaCraft currently targets Maya 2025 with PySide6."
+        ) from exc
+    return cmds, omui, wrap_instance, QtWidgets
 
-    # 3. 获取指针并转换
-    ptr = omui.MQtUtil.findControl(workspace_control_name)
-    maya_dock_widget = shiboken6.wrapInstance(int(ptr), QtWidgets.QWidget)
 
-    # 4. 获取或创建布局
-    if maya_dock_widget.layout() is None:
-        layout = QtWidgets.QVBoxLayout(maya_dock_widget)
+def close() -> None:
+    """Close the current MayaCraft panel if it exists."""
+    global _window
+
+    cmds, _omui, _wrap_instance, _QtWidgets = _maya_modules()
+    if _window is not None:
+        try:
+            shutdown = getattr(_window, "shutdown", None)
+            if callable(shutdown):
+                shutdown()
+            _window.setParent(None)
+            _window.deleteLater()
+        finally:
+            _window = None
+
+    if cmds.workspaceControl(WORKSPACE_CONTROL, exists=True):
+        cmds.deleteUI(WORKSPACE_CONTROL, control=True)
+
+
+def run(*, development: bool = False) -> Any:
+    """Create and return the dockable MayaCraft panel.
+
+    Args:
+        development: Reload already imported ``MayaCraft`` modules first.
+            Leave disabled for artist sessions; enable while editing source.
+    """
+    global _window
+
+    cmds, omui, wrap_instance, QtWidgets = _maya_modules()
+    close()
+
+    if development:
+        from MayaCraft.utils.reload_handler import reload_package
+
+        reload_package("MayaCraft", exclude={__name__})
+
+    main_window = importlib.import_module("MayaCraft.ui.main_window")
+    cmds.workspaceControl(
+        WORKSPACE_CONTROL,
+        label="MayaCraft",
+        retain=False,
+        floating=True,
+    )
+
+    pointer = omui.MQtUtil.findControl(WORKSPACE_CONTROL)
+    if pointer is None:
+        cmds.deleteUI(WORKSPACE_CONTROL, control=True)
+        raise RuntimeError(
+            f"Maya created {WORKSPACE_CONTROL!r}, but its Qt control was not found."
+        )
+
+    dock_widget = wrap_instance(int(pointer), QtWidgets.QWidget)
+    layout = dock_widget.layout()
+    if layout is None:
+        layout = QtWidgets.QVBoxLayout(dock_widget)
         layout.setContentsMargins(0, 0, 0, 0)
-    else:
-        layout = maya_dock_widget.layout()
 
-    # 5. 实例化你的窗口 (现在它是 QWidget，非常安全)
-    app = main_window.MayaCraftMainWindow(parent=maya_dock_widget)
+    _window = main_window.MayaCraftMainWindow(parent=dock_widget)
+    layout.addWidget(_window)
+    _window.show()
+    return _window
 
-    # 6. 添加进布局
-    layout.addWidget(app)
 
-    return app
+show = run
 
 
 if __name__ == "__main__":

@@ -13,3 +13,6 @@ _*
 
 # 保留 Python 包的初始化文件 (否则会被 _* 忽略)
 !__init__.py
+
+# 本地 Maya/Qt 视觉验证产物
+tests/artifacts/

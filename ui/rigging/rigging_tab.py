@@ -1,11 +1,11 @@
 # ui/rigging/rigging_tab.py
 # -*- coding: utf-8 -*-
-from PySide6 import QtWidgets
+from MayaCraft.compat.qt import QtWidgets
 
 # 导入各个子模块 UI
-from ui.rigging.import_widget_ui import ImportWidget
-from ui.rigging.build_widget_ui import BuildWidget
-from ui.rigging.controller_widget_ui import ControllerWidget
+from MayaCraft.ui.rigging.import_widget_ui import ImportWidget
+from MayaCraft.ui.rigging.build_widget_ui import BuildWidget
+from MayaCraft.ui.rigging.controller_widget_ui import ControllerWidget
 
 
 class RiggingTab(QtWidgets.QWidget):

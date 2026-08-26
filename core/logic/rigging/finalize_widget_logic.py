@@ -187,7 +187,7 @@ def finalize_rig():
                 full_attr = f"{ctrl}.{attr}"
                 if cmds.getAttr(full_attr, settable=True):
                     cmds.setAttr(full_attr, lock=True, keyable=False, channelBox=False)
-            except:
+            except Exception:
                 pass  # 忽略已锁定或不存在的属性
 
         locked_count += 1

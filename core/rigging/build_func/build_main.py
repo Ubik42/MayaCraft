@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 import maya.cmds as cmds
-from core import tool
-from core import controller  # 引用你新的 controller.py
+from MayaCraft.core import tool
+from MayaCraft.core import controller  # 引用你新的 controller.py
 
 
 def create_main_root(groups: dict):

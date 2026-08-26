@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 
-from PySide6 import QtWidgets, QtCore, QtGui
+from MayaCraft.compat.qt import QtWidgets, QtCore, QtGui
 import os
 
 # 导入后端逻辑
-from core.logic.animation import animation_tab_logic as logic
-from ui.animation.curve_widget_ui import CurveWidget
+from MayaCraft.core.logic.animation import animation_tab_logic as logic
+from MayaCraft.ui.animation.curve_widget_ui import CurveWidget
 
 
 class AnimationTab(QtWidgets.QWidget):
@@ -45,7 +45,7 @@ class AnimationTab(QtWidgets.QWidget):
     # ---------------------------------------------------------------------------
     def _create_pose_library_ui(self):
         """创建Pose库UI"""
-        group = QtWidgets.QGroupBox("1. Pose库 | Pose Library")
+        group = QtWidgets.QGroupBox("1. Pose 姿势库")
         main_pose_layout = QtWidgets.QHBoxLayout(group)
 
         # 左侧: Pose列表
@@ -65,7 +65,7 @@ class AnimationTab(QtWidgets.QWidget):
         self.save_pose_btn = QtWidgets.QPushButton("保存新Pose")
         self.save_pose_btn.setStyleSheet("background-color: #5285a6; color: white;")
         self.delete_pose_btn = QtWidgets.QPushButton("删除选中Pose")
-        self.mirror_pose_btn = QtWidgets.QPushButton("镜像Pose (L<->R)")
+        self.mirror_pose_btn = QtWidgets.QPushButton("左右镜像 Pose")
 
         # Pose混合应用
         apply_blend_layout = QtWidgets.QHBoxLayout()
@@ -94,12 +94,12 @@ class AnimationTab(QtWidgets.QWidget):
 
     def _create_anim_utils_ui(self):
         """创建动画工具集UI"""
-        group = QtWidgets.QGroupBox("2. 动画工具集 | Animation Utilities")
+        group = QtWidgets.QGroupBox("2. 动画工具集")
         layout = QtWidgets.QGridLayout(group)
 
-        self.bake_anim_btn = QtWidgets.QPushButton("动画烘焙 (Bake)")
-        self.motion_trail_btn = QtWidgets.QPushButton("创建运动轨迹 (Motion Trail)")
-        self.tween_machine_btn = QtWidgets.QPushButton("中间帧 (Tween 50%)")
+        self.bake_anim_btn = QtWidgets.QPushButton("烘焙动画")
+        self.motion_trail_btn = QtWidgets.QPushButton("创建运动轨迹")
+        self.tween_machine_btn = QtWidgets.QPushButton("生成中间帧 50%")
 
         layout.addWidget(self.bake_anim_btn, 0, 0)
         layout.addWidget(self.motion_trail_btn, 0, 1)

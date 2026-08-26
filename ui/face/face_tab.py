@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from functools import partial
-from PySide6 import QtWidgets, QtCore, QtGui
-from core.logic.face import face_tab_logic as logic
+from MayaCraft.compat.qt import QtWidgets, QtCore, QtGui
+from MayaCraft.core.logic.face import face_tab_logic as logic
 
 
 class FaceTab(QtWidgets.QWidget):
@@ -41,16 +41,16 @@ class FaceTab(QtWidgets.QWidget):
 
     def _create_global_actions(self):
         """创建顶部的全局操作按钮"""
-        group = QtWidgets.QGroupBox("全局操作 (Global Actions)")
+        group = QtWidgets.QGroupBox("全局操作")
         layout = QtWidgets.QHBoxLayout(group)
 
-        btn_build_all = QtWidgets.QPushButton("一键绑定全部 (Build All)")
+        btn_build_all = QtWidgets.QPushButton("一键构建全部面部绑定")
         btn_build_all.setMinimumHeight(35)
         # 设置一点样式让它显眼
         btn_build_all.setStyleSheet("background-color: #5D4037; font-weight: bold;")
         btn_build_all.clicked.connect(logic.run_build_all)
 
-        btn_update = QtWidgets.QPushButton("合并/更新次级 (Update)")
+        btn_update = QtWidgets.QPushButton("合并并更新次级模块")
         btn_update.setMinimumHeight(35)
         btn_update.clicked.connect(logic.update_second)
 
@@ -65,19 +65,19 @@ class FaceTab(QtWidgets.QWidget):
         self.toolbox.setStyleSheet("QToolBox::tab { font-weight: bold; }")
 
         # --- 1. 眉毛 Brow ---
-        self.toolbox.addItem(self._create_brow_page(), "1. 眉毛 (Brow)")
+        self.toolbox.addItem(self._create_brow_page(), "1. 眉毛")
 
         # --- 2. 眼睛 Eye & Lid ---
-        self.toolbox.addItem(self._create_eye_page(), "2. 眼睛与眼皮 (Eye & Lid)")
+        self.toolbox.addItem(self._create_eye_page(), "2. 眼睛与眼皮")
 
         # --- 3. 鼻子 Nose ---
-        self.toolbox.addItem(self._create_nose_page(), "3. 鼻子 (Nose)")
+        self.toolbox.addItem(self._create_nose_page(), "3. 鼻子")
 
         # --- 4. 下颚与嘴唇 Jaw & Lip ---
-        self.toolbox.addItem(self._create_mouth_page(), "4. 下颚与嘴唇 (Jaw & Lip)")
+        self.toolbox.addItem(self._create_mouth_page(), "4. 下颚与嘴唇")
 
         # --- 5. 脸颊 Bulge & Cheek ---
-        self.toolbox.addItem(self._create_cheek_page(), "5. 脸颊与其它 (Cheek & Bulge)")
+        self.toolbox.addItem(self._create_cheek_page(), "5. 脸颊与其它")
 
         self.content_layout.addWidget(self.toolbox)
 
@@ -100,7 +100,7 @@ class FaceTab(QtWidgets.QWidget):
         layout.addWidget(info)
 
         # --- 步骤 1: 曲线 ---
-        g1 = self._create_step_group("步骤 1: 创建形状曲线 (Shape)")
+        g1 = self._create_step_group("步骤 1：创建形状曲线")
 
         desc1 = (
             "<b>1. 选择对象：</b><br>"
@@ -109,14 +109,14 @@ class FaceTab(QtWidgets.QWidget):
         l1 = self._create_hint_label(desc1)
 
         # 按钮：参数映射 Part=Brow, Type=Curve
-        b1 = self._create_action_btn("创建眉毛曲线 (Create Curve)",
+        b1 = self._create_action_btn("创建眉毛曲线",
                                      lambda: logic.create_locator("Brow", "Curve", "", ""))
         g1.layout().addWidget(l1)
         g1.layout().addWidget(b1)
         layout.addWidget(g1)
 
         # --- 步骤 2: 旋转中心 ---
-        g2 = self._create_step_group("步骤 2: 创建滑动轴心 (Pivot/Roll)")
+        g2 = self._create_step_group("步骤 2：创建滑动轴心")
 
         desc2 = (
             "<b>1. 选择对象：</b><br>"
@@ -130,7 +130,7 @@ class FaceTab(QtWidgets.QWidget):
         l2 = self._create_hint_label(desc2)
 
         # 按钮：参数映射 Part=Brow, Type=Roll
-        b2 = self._create_action_btn("创建旋转中心 (Create Roll)",
+        b2 = self._create_action_btn("创建旋转中心",
                                      lambda: logic.create_locator("Brow", "Roll", "", ""))
 
         g2.layout().addWidget(l2)
@@ -142,7 +142,7 @@ class FaceTab(QtWidgets.QWidget):
 
         # --- 步骤 3: 构建 ---
         # 按钮：调用 build_selected("Brow")
-        btn_build = self._create_build_btn("绑定眉毛 (Build Brow)", "Brow")
+        btn_build = self._create_build_btn("构建眉毛绑定", "Brow")
 
         # 底部提示
         l3 = self._create_hint_label("点击构建后，系统将自动生成左右两侧的控制器。")
@@ -162,21 +162,21 @@ class FaceTab(QtWidgets.QWidget):
         layout.addWidget(info)
 
         # 眼球
-        g1 = self._create_step_group("步骤 1: 眼球中心 (Eye)")
-        l1 = self._create_hint_label("选择眼球模型上的 <b>Loop边</b> 或 <b>顶点</b> 计算中心。")
-        b1 = self._create_action_btn("创建眼球中心 (Eye Roll)",
+        g1 = self._create_step_group("步骤 1：眼球中心")
+        l1 = self._create_hint_label("选择眼球模型上的 <b>环形边</b> 或 <b>顶点</b> 计算中心。")
+        b1 = self._create_action_btn("创建眼球中心",
                                      lambda: logic.create_locator("Eye", "Roll", "", ""))
         g1.layout().addWidget(l1)
         g1.layout().addWidget(b1)
         layout.addWidget(g1)
 
         # 眼皮
-        g2 = self._create_step_group("步骤 2: 眼皮曲线 (Lid)")
+        g2 = self._create_step_group("步骤 2：眼皮曲线")
         l2 = self._create_hint_label("分别选择 <b>上眼皮</b> 和 <b>下眼皮</b> 的边缘线。")
 
-        b_up = self._create_action_btn("创建上眼皮线 (Lid Main Up)",
+        b_up = self._create_action_btn("创建上眼皮曲线",
                                        lambda: logic.create_locator("Lid", "Curve", "MainUp", ""))
-        b_dn = self._create_action_btn("创建下眼皮线 (Lid Main Dn)",
+        b_dn = self._create_action_btn("创建下眼皮曲线",
                                        lambda: logic.create_locator("Lid", "Curve", "MainDn", ""))
 
         g2.layout().addWidget(b_up)
@@ -185,8 +185,8 @@ class FaceTab(QtWidgets.QWidget):
 
         # 构建
         layout.addWidget(self._create_separator())
-        layout.addWidget(self._create_build_btn("绑定眼睛 (Build Eye)", "Eye"))
-        layout.addWidget(self._create_build_btn("绑定眼皮 (Build Lid)", "Lid"))
+        layout.addWidget(self._create_build_btn("构建眼睛绑定", "Eye"))
+        layout.addWidget(self._create_build_btn("构建眼皮绑定", "Lid"))
 
         layout.addStretch()
         return widget
@@ -197,16 +197,16 @@ class FaceTab(QtWidgets.QWidget):
 
         g1 = self._create_step_group("鼻子定位器")
         l1 = self._create_hint_label("选择鼻头/鼻翼相关的边或点。")
-        b1 = self._create_action_btn("创建鼻子曲线 (Nose Curve)",
+        b1 = self._create_action_btn("创建鼻子曲线",
                                      lambda: logic.create_locator("Nose", "Curve", "", ""))
-        b2 = self._create_action_btn("创建鼻子中心 (Nose Roll)",
+        b2 = self._create_action_btn("创建鼻子中心",
                                      lambda: logic.create_locator("Nose", "Roll", "", ""))
         g1.layout().addWidget(l1)
         g1.layout().addWidget(b1)
         g1.layout().addWidget(b2)
         layout.addWidget(g1)
 
-        layout.addWidget(self._create_build_btn("绑定鼻子 (Build Nose)", "Nose"))
+        layout.addWidget(self._create_build_btn("构建鼻子绑定", "Nose"))
         layout.addStretch()
         return widget
 
@@ -215,28 +215,28 @@ class FaceTab(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(widget)
 
         info = self._create_info_label(
-            "<span style='color:orange;'>注意：嘴唇绑定依赖下颚(Jaw)。请先绑定下颚。</span>"
+            "<span style='color:orange;'>注意：嘴唇绑定依赖下颚，请先构建下颚绑定。</span>"
         )
         layout.addWidget(info)
 
         # 下颚
-        g1 = self._create_step_group("1. 下颚 (Jaw)")
+        g1 = self._create_step_group("1. 下颚")
         l1 = self._create_hint_label("选择下巴附近的点，计算旋转轴心。")
-        b1 = self._create_action_btn("创建下颚中心 (Jaw Roll)",
+        b1 = self._create_action_btn("创建下颚中心",
                                      lambda: logic.create_locator("Jaw", "Roll", "", ""))
         g1.layout().addWidget(l1)
         g1.layout().addWidget(b1)
         layout.addWidget(g1)
 
-        layout.addWidget(self._create_build_btn("绑定下颚 (Build Jaw)", "Jaw"))
+        layout.addWidget(self._create_build_btn("构建下颚绑定", "Jaw"))
 
         # 嘴唇
-        g2 = self._create_step_group("2. 嘴唇 (Lip)")
-        l2 = self._create_hint_label("分别选择 <b>上嘴唇</b> 和 <b>下嘴唇</b> 最内圈的闭合Loop线。")
+        g2 = self._create_step_group("2. 嘴唇")
+        l2 = self._create_hint_label("分别选择 <b>上嘴唇</b> 和 <b>下嘴唇</b> 最内圈的闭合环形边。")
 
-        b_up = self._create_action_btn("创建上唇线 (Lip Up)",
+        b_up = self._create_action_btn("创建上唇曲线",
                                        lambda: logic.create_locator("Lip", "Curve", "Up", ""))
-        b_dn = self._create_action_btn("创建下唇线 (Lip Dn)",
+        b_dn = self._create_action_btn("创建下唇曲线",
                                        lambda: logic.create_locator("Lip", "Curve", "Dn", ""))
 
         g2.layout().addWidget(b_up)
@@ -244,13 +244,13 @@ class FaceTab(QtWidgets.QWidget):
 
         # 嘴唇Roll
         l3 = self._create_hint_label("选择嘴唇中心点。")
-        b_roll = self._create_action_btn("创建嘴唇中心 (Lip Roll)",
+        b_roll = self._create_action_btn("创建嘴唇中心",
                                          lambda: logic.create_locator("Lip", "Roll", "", ""))
         g2.layout().addWidget(l3)
         g2.layout().addWidget(b_roll)
 
         layout.addWidget(g2)
-        layout.addWidget(self._create_build_btn("绑定嘴唇 (Build Lip)", "Lip"))
+        layout.addWidget(self._create_build_btn("构建嘴唇绑定", "Lip"))
 
         layout.addStretch()
         return widget
@@ -260,23 +260,23 @@ class FaceTab(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(widget)
 
         info = self._create_info_label(
-            "<span style='color:orange;'>注意：Bulge 依赖嘴唇和下颚。请最后构建。</span>"
+            "<span style='color:orange;'>注意：脸颊鼓包依赖嘴唇和下颚，请最后构建。</span>"
         )
         layout.addWidget(info)
 
-        g1 = self._create_step_group("脸颊鼓包 (Bulge)")
+        g1 = self._create_step_group("脸颊鼓包")
         l1 = self._create_hint_label(
             "选择脸颊外侧(法令纹外)的一条<b>垂直线</b>。<br>"
             "该线定义脸颊肌肉的滑动轨迹。"
         )
-        b1 = self._create_action_btn("创建脸颊线 (Bulge Curve)",
+        b1 = self._create_action_btn("创建脸颊曲线",
                                      lambda: logic.create_locator("Bulge", "Curve", "", ""))
 
         g1.layout().addWidget(l1)
         g1.layout().addWidget(b1)
         layout.addWidget(g1)
 
-        layout.addWidget(self._create_build_btn("绑定脸颊 (Build Bulge)", "Bulge"))
+        layout.addWidget(self._create_build_btn("构建脸颊绑定", "Bulge"))
         layout.addStretch()
         return widget
 

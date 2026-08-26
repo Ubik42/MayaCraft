@@ -1,9 +1,9 @@
 # ui/rigging/controller_widget_ui.py
 # -*- coding: utf-8 -*-
 
-from PySide6 import QtWidgets, QtGui, QtCore
-from core.logic.rigging import controller_widget_logic as logic
-from ui.collapsible_widget import CollapsibleWidget
+from MayaCraft.compat.qt import QtWidgets, QtGui, QtCore
+from MayaCraft.core.logic.rigging import controller_widget_logic as logic
+from MayaCraft.ui.collapsible_widget import CollapsibleWidget
 import maya.cmds as cmds
 
 
@@ -11,7 +11,7 @@ class ControllerWidget(CollapsibleWidget):
     """“控制器形状管理”功能块的UI类。"""
 
     def __init__(self, parent=None):
-        super().__init__("4. 控制器形状 | Controller Shapes", parent)
+        super().__init__("4. 控制器形状", parent)
 
         content_layout = QtWidgets.QVBoxLayout()
         self._create_content(content_layout)
@@ -23,7 +23,7 @@ class ControllerWidget(CollapsibleWidget):
     def _create_content(self, layout: QtWidgets.QVBoxLayout):
 
         # --- 1. 保存区域 ---
-        save_group = QtWidgets.QGroupBox("保存 (Save)")
+        save_group = QtWidgets.QGroupBox("保存")
         save_layout = QtWidgets.QHBoxLayout()
         self.name_input = QtWidgets.QLineEdit()
         self.name_input.setPlaceholderText("输入文件名 (留空则使用对象名)")
@@ -35,7 +35,7 @@ class ControllerWidget(CollapsibleWidget):
         save_group.setLayout(save_layout)
 
         # --- 2. 加载与匹配区域 ---
-        load_group = QtWidgets.QGroupBox("应用 (Apply)")
+        load_group = QtWidgets.QGroupBox("应用")
         load_layout = QtWidgets.QVBoxLayout()
 
         # 单个应用
@@ -49,7 +49,7 @@ class ControllerWidget(CollapsibleWidget):
 
         # 批量应用 [修改文案]
         batch_layout = QtWidgets.QHBoxLayout()
-        self.import_all_btn = QtWidgets.QPushButton("一键导入所有控制器 (Import All)")
+        self.import_all_btn = QtWidgets.QPushButton("一键导入所有控制器")
         self.import_all_btn.setToolTip("遍历 shape 文件夹下的所有文件，如果场景中有同名物体，则自动替换形状。")
         self.import_all_btn.setMinimumHeight(30)
         batch_layout.addWidget(self.import_all_btn)
@@ -59,10 +59,10 @@ class ControllerWidget(CollapsibleWidget):
         load_group.setLayout(load_layout)
 
         # --- 3. 颜色工具区域 ---
-        color_group = QtWidgets.QGroupBox("颜色 (Color)")
+        color_group = QtWidgets.QGroupBox("颜色")
         color_layout = QtWidgets.QHBoxLayout()
 
-        self.color_btn = QtWidgets.QPushButton("选择并应用颜色 (Pick Color)")
+        self.color_btn = QtWidgets.QPushButton("选择并应用颜色")
         self.color_btn.setMinimumHeight(30)
 
         self.btn_red = self._create_color_btn("#ff5c5c", (1, 0.2, 0.2))

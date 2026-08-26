@@ -3,7 +3,7 @@
 
 import maya.cmds as cmds
 import traceback
-import core.rigging.basic.fk as basic_fk
+import MayaCraft.core.rigging.basic.fk as basic_fk
 
 def build_base_fk(groups: dict):
     """调用 basic_fk 生成基础 FK 系统"""

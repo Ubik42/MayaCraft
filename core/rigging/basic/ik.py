@@ -10,8 +10,8 @@ IK 控制器模块。
 """
 
 import maya.cmds as cmds
-from core import controller
-from core import tool
+from MayaCraft.core import controller
+from MayaCraft.core import tool
 
 
 def build_ik_system(
@@ -127,7 +127,7 @@ def build_ik_system(
             # 删除多余项 (比如 xxx_Part1)
             try:
                 cmds.delete(child)
-            except:
+            except Exception:
                 pass
 
     ikx_start = ikx_joints[0]

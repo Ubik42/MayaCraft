@@ -13,7 +13,7 @@ IK/FK 切换系统模块。
 import maya.cmds as cmds
 from typing import Optional, List, Dict
 
-from core.rigging.basic import ik
+from MayaCraft.core.rigging.basic import ik
 
 
 def _get_bind_chain_names(start_name: str, end_name: str) -> List[str]:

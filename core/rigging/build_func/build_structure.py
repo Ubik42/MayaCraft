@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 import maya.cmds as cmds
-from core import tool
-from core.rigging import build
+from MayaCraft.core import tool
+from MayaCraft.core.rigging import build
 
 
 def build_scene_structure(builder):

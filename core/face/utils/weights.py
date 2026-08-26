@@ -7,7 +7,7 @@ from functools import partial
 
 import pymel.core as pm
 
-from core.face.utils import actions
+from MayaCraft.core.face.utils import actions
 
 ROOT = os.path.abspath(os.path.join(__file__+"../.."))
 

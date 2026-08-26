@@ -154,7 +154,7 @@ def create_stretchy_ik(
     if parents:
         try:
             cmds.parent(grp, parents[0])
-        except:
+        except Exception:
             pass
 
     return True

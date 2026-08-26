@@ -1,10 +1,122 @@
 # MayaCraft
 
-面向 Autodesk Maya 2025 的模块化角色绑定与技术美术工具集。MayaCraft 将身体绑定、面部系统、蒙皮、动画辅助、通用场景操作和节点分析集中在一个可停靠的 PySide6 面板中，同时保留清晰的 UI / Logic / Core 分层，方便继续扩展绑定模块。
+> Maya 2025 中文原生绑定与动画展示版 · `workspaceControl + PySide6 + QPainter`
 
-## 当前界面模块
+## 展示版速览
 
-MayaCraft 启动后以 `workspaceControl` 嵌入 Maya，包含六个标签页：
+这一版主动收口长线研发，目标是形成可以直接录屏、面试讲解和现场操作的完整演示，而不是继续堆放
+尚未闭环的按钮。核心路径均连接真实 Maya 场景，关键写操作遵循“预览 → 应用 → 读回验证 → Undo”。
+
+| Character Workspace | 声明式 Rig Graph |
+| --- | --- |
+| ![角色工作区](docs/images/character_workspace.png) | ![绑定行为图](docs/images/rig_graph.png) |
+| Deformation MRI | Retarget + Contact IK |
+| ![形变 MRI](docs/images/deformation_mri.png) | ![重定向与接触 IK](docs/images/retarget_contact_ik.png) |
+
+展示范围：动态角色工作区、Deformation MRI、Motion Magnetism、Retarget/Clip/Contact IK，以及可增量
+构建的真实 FK/RP IK/Pole/基础 Space Switch。完整 FK/IK 无跳变匹配、带关键帧补偿的空间切换、
+Twist/Bendy/Guide 编辑、Face PSD/RBF 与拓扑变化蒙皮迁移已明确列入后续，不以半成品进入本次展示。
+
+MayaCraft 面向国内企业展示与中文制作团队，主界面默认使用简体中文；Maya、FK/IK、RBF、Pose、
+skinCluster 等必要行业术语按语境保留。原生 Qt 启动时会显式注册 CJK 字体，确保 Maya 2025 与
+后台 mayapy 截图中的中文一致显示。
+
+面向 Autodesk Maya 2025 的专业角色绑定与动画工具。MayaCraft 聚焦身体/面部绑定、蒙皮、动画制作、重定向和制作可视化，不再承载通用 TD 与节点诊断功能。当前展示版本只支持 Maya 2025、Python 3.11、PySide6 与 shiboken6，不维护多前端兼容矩阵。
+
+产品方向、算法候选和阶段门槛见 `docs/DEVELOPMENT_PLAN.md`。当前组合展示已完成 Living Rig Canvas 1.0 与 Deformation MRI v0：真实 DAG 交互、多角色 Session、Rig Module Spectrum、skinCluster 热力诊断和可撤销归一化修复。
+
+新的 Rig Graph 编译内核正在替换 legacy `RigBuilder`：版本化 Module/Socket/Node 声明、
+control/deform/delivery 分层、结构 diff、增量 Build、全图读回验证和整块 Undo 已接入 Maya 2025。
+节点声明之外还拥有独立的物理行为声明；首批真实 FK 控制曲线、形变关节和矩阵驱动网络已经落地，
+断开连接会被识别为行为漂移，而不是继续相信旧 metadata；
+旧构建页仍保留为行为参考，不把它的“捕获异常后继续”视为生产完成态。
+
+## 当前 Character Workspace
+
+MayaCraft 启动后以 `workspaceControl` 嵌入 Maya。首页已经改为角色驱动的
+Kinetic Holographic Stage，而不是旧式功能标签集合：
+
+- Maya 选择变化会触发防抖扫描，自动捕获角色上下文；
+- 顶栏 Character Orbit 自动发现当前场景的已链接角色；未链接角色可固定到本次 session，
+  点击轨道节点即可通过真实 Maya selection 在多个角色间切换；
+- 中央动态舞台优先投影真实 Maya 关节位置与父子关系，按左右侧、控制器、
+  当前选择和注册状态着色；无有效空间数据时才降级为抽象角色；
+- 舞台节点具备实时 hover 光晕与浮动 HUD；点击节点会写回 Maya selection，随后由
+  宿主 callback 重新捕获角色快照并点亮选中态，形成双向同步；
+- Inspector 显示角色根、稳定 ID、命名空间、引用状态、关节、网格、控制器、
+  SkinCluster 数量与结构评分；
+- `Preview Character Link` 先生成零写入 ChangePlan，再以单一 Maya Undo chunk
+  写入角色身份、稳定 ID 与 schema；写后重新读取验证，失败自动回滚；
+- Change Capsule 显示每项 CREATE/UPDATE、阻断原因、验证结果和 Undo 可用状态；
+- 扫描全程只读，支持空选择、深层级选择与公共资产组下的 namespaced 角色；
+- 选择 callback 由窗口生命周期持有，重复启动和关闭会显式清理；
+- 旧工具采用 lazy-load，从左侧 R/S/A 轨道进入，单一旧模块失败不会拖垮首页。
+
+左侧 `D` 进入 Deformation MRI：
+
+- Maya API 2.0 分批读取真实 `skinCluster` 权重，避免逐顶点命令循环；
+- 计算 weight sum、活跃 influence、dominant influence、归一化 entropy、低权重碎片、
+  locked / missing influence 和综合热度；
+- 动态网格空间热力场从真实世界坐标做 PCA 主平面投影，用三角面、扫描波、深度和发光热点表达
+  权重分布；hover 给出解释，点击可回选 Maya 顶点，`Shift + 拖拽` 可刷选局部组件；
+- Normalize Repair 仅处理非零且明确未归一的向量，先预览 before/after，应用前检查漂移，
+  写后 API 读回验证，并可在单一 Maya Undo chunk 中恢复原权重。
+- “诊断光谱”可在综合热度、主导骨骼、混合熵和锁定影响四种网格场间即时切换；下方 influence
+  光谱显示覆盖量、主导量和锁定状态，点击后聚焦该区域并回选真实 Maya 骨骼；matrix 空洞会显示
+  具体槽位而不是只给一个模糊总分。
+
+左侧 `M` 进入 Motion Magnetism 的首个真实切片：
+
+- 按 Maya 时间上下文读取所选 joint/control 的 worldMatrix，不切换或扰动当前时间；
+- 计算速度、加速度、jerk、累计弧长、四元数旋转跳变与带置信度的接触区间；
+- 原生 QPainter Ghost Trajectory 使用时间渐变轨迹、接触磁场、速度 Ghost、jerk spike、
+  rotation warning 和底部接触时间带表达真实运动；
+- hover 读取帧和微分信号，点击轨迹样本可定位 Maya 当前帧。
+- `SET BASELINE` 可锁定原始世界轨迹；再次捕获 candidate 后，同屏显示 RMS/MAX 空间误差、
+  速度误差、接触保持率、虚线基准轨迹与逐帧误差 spoke，为空间切换和重定向比较提供依据。
+- 接触样本可预览 Contact Anchor 时间影响场，并将补偿写入独立 additive Animation Layer；
+  写前防漂移、写后重采样验证，失败自动回滚，Undo 后再次验证原运动恢复。
+
+R4 的新 Pose/Clip 数据层已经开始替换旧 Animation 页：版本化 schema 同时保留本地/世界变换、
+四元数、父语义和自定义标量通道；Clip 使用显式 DG 时间上下文采样，不移动 Maya 时间线。语义
+Retarget Profile 可跨 namespace、比例和命名差异配对骨架，并生成零写入 Ghost Pose 及置信度；
+新的“映”工作区已经把源/目标骨架、动态语义连接、映射置信度、比例差异和目标 Ghost 放到同一张
+原生 QPainter 舞台；点击映射可同时定位 Maya 两侧关节。单帧 Ghost 始终零写入，Clip 工作流则在
+明确预览后才允许进入独立 Animation Layer 事务。
+
+重定向轴空间不再假定两套骨架共享世界前向。内置模板覆盖同向、`+Z → +X`、`+X → +Z`、前向
+反转和 Z-up → Y-up；平移向量通过正交基矩阵变换，旋转增量通过四元数共轭变换，再进入目标
+`jointOrient` 通道校准。切换模板会立即重算零写入 Ghost 并使旧计划失效；基础动画层存在期间模板
+自动锁定，验证结果会把模板 ID 与中文名称写入 Clip metadata。
+
+当前 Clip 路径已可捕获 Maya 播放范围，在时间带中查看根运动、最大旋转增量和双脚接触保持，并将
+必要语义旋转与 root/pelvis 根运动写入独立 Override Animation Layer。写前检查目标漂移，写后按
+local quaternion/translation 重采样验证，失败自动回滚，Undo 后证明目标基线恢复。该事务不会向每个
+关节写平移来伪造 Ghost。旋转计划会校准目标 `jointOrient` 等静态轴偏移，并保留发生变化通道的
+完整首尾采样键，避免 Override Layer 从后续动作向零差值首帧错误外推。
+
+应用后会重新捕获目标实际 Clip，与 Ghost 做逐帧世界空间验证；时间带显示红色偏差针和接触保持率。
+“接触 IK”可在不写场景的前提下，以 FABRIK 求解髋/膝/脚三点链：可达解显示薄荷绿，不可达解显示
+橙色并给出精确末端缺口。双脚同时约束时会计算离原姿态最近的共同骨盆补偿，再把保长解转换成
+目标 `jointOrient` 轴系下的髋、膝、脚旋转，写入独立 `MayaCraft_ContactIK_*` 覆盖动画层。写前检查
+场景漂移，写后逐帧验证本地通道与脚底世界锚点，失败自动回滚；必须先撤销接触 IK 层，才能继续
+撤销基础重定向层。
+
+接触调校条可直接设置接触过渡帧、地面坡度与高度；根节点和双脚会按地面法线做四元数渐入对齐，
+接触边界使用 Smoothstep 权重包络，避免第一帧硬吸附。舞台中的左右脚绿色锚环支持直接拖拽，拖动
+期间只重新计算零写入预览，不改 Maya 场景；坡面参数、过渡帧与脚底锚点偏移会随验证结果写入
+中文 Clip metadata，便于复现动画师的修正意图。
+
+重定向工作区现在读写 `mayacraft.clip.package/v2`。资产包同时保存 Clip、参考姿态、可搜索名称、标签、
+forward/up 坐标约定、metadata 与 SHA-256 指纹；写入采用原子替换并立即读回验证。v1 Package 会先按
+旧规范验证原指纹再迁移，旧裸 `mayacraft.clip/v1` 会明确标记为“以首帧作为参考姿态”的迁移资产。
+导入按便携节点键映射到当前源骨架，并阻断节点缺失、规模超限、轴空间或参考尺度不匹配。
+
+“Clip 资产舱”可扫描最多 500 个 `.mayaclip`/JSON 资产，以名称、标签和路径搜索，并在加载前展示帧数、
+帧率、时长、坐标轴、版本与资产状态。损坏文件保留为红色可诊断条目但不能加载；有效资产必须通过
+节点拓扑、尺度、轴空间和节点帧规模预检，才会启用“载入并生成零写入 Ghost”。
+
+当前旧工具包括：
 
 | 标签页 | 已接入能力 |
 | --- | --- |
@@ -13,7 +125,6 @@ MayaCraft 启动后以 `workspaceControl` 嵌入 Maya，包含六个标签页：
 | Skinning | 权重导入导出、复制、粘贴、镜像、平滑、Prune 与清理无用影响骨骼 |
 | Animation | Pose 保存/应用/删除/镜像、曲线插值、时间和值偏移、烘焙与运动轨迹 |
 | General | 对齐、批量命名、Transform 分组冻结、控制器替换和关节辅助操作 |
-| TD | Node Editor 辅助、节点属性检查、Markdown / Mermaid 连接图导出 |
 
 ## 绑定系统
 
@@ -23,13 +134,22 @@ MayaCraft 启动后以 `workspaceControl` 嵌入 Maya，包含六个标签页：
 
 - FK、IK 与 IK/FK 混合系统；
 - 手臂、腿、脊柱等带标签模块；
-- Foot Roll 与 Foot Rock；
 - Aim、Stretchy、Segment Scale Compensation；
 - Twist / Bendy 与 Inbetween Joint；
 - 由 `priorities.json` 控制的构建顺序；
 - 绑定结构、骨骼处理和控制器集合的分阶段 Build。
 
 仓库同时包含多套原始骨架模板，可从 Rigging 页导入用于验证不同角色结构。`files/Rigged/` 中的示例资产来自各自来源，署名信息保存在对应目录的 `credit.txt`。
+
+新的 `G` 工作区是 Maya 2025 原生 Rig Graph 编译器：从所选 joint 只读分析骨架语义和左右对称，
+以动态模块图显示 typed sockets 与 CREATE/UPDATE/REPARENT/REBUILD/REMOVE 差异，再通过单一 Undo
+事务增量构建并全图读回验证。黄金双足目前覆盖 7 个模块、73 个声明对象和 34 条物理行为；脊柱、
+头部与四肢生成真实 NURBS 控制曲线、独立 FK/IK/result joint 链、RP IK + Pole、
+`blendMatrix` FK/IK 混合与 `multMatrix → offsetParentMatrix` 驱动；手脚 IK 控制器提供基础全局/胸腔
+Space Switch，并保持初始世界位置不跳变。完整的动画帧补偿式切换仍属于后续路线。
+控制器会绑定到识别出的 spine/head/arm/hand/leg/foot 世界位置与朝向。输入骨架保持只读；连接断开、
+源关节改名、结构漂移和引用节点变更均在应用前阻断或进入精确差异。旧 Rigging 页仍作为迁移期功能
+入口，不再被视为可信构建内核。
 
 ### 面部绑定
 
@@ -42,7 +162,7 @@ MayaCraft 启动后以 `workspaceControl` 嵌入 Maya，包含六个标签页：
 
 面部页不是单纯的按钮集合，实际构建逻辑位于 `core/logic/face/` 与 `core/face/systems/`，UI 只负责参数和流程组织。
 
-## 动画、蒙皮与 TD 工具
+## 动画与蒙皮工具
 
 ### Animation
 
@@ -60,14 +180,14 @@ MayaCraft 启动后以 `workspaceControl` 嵌入 Maya，包含六个标签页：
 - 复制、粘贴、镜像和平滑权重；
 - 清理小权重与未使用 Influence。
 
+新的 Deformation MRI 已加入可解释 Skin Mirror：先按名称语义和骨骼空间位置配对 influence，
+再用空间哈希配对对称顶点，提供左到右/右到左零写入预览、置信度、拓扑不对称阻断、锁定骨骼保护、
+写后读回验证与完整 Maya Undo。
+
+MRI 可视层直接读取 MFnMesh 世界坐标和三角拓扑，通过 host-independent PCA 投影任意朝向网格；
+大网格保留完整抽样面与全部异常热点，当前 100,000 顶点基准的投影构建低于 0.5 秒。
+
 界面中的 Delta Mush 按钮目前为禁用状态，不列为已完成功能。
-
-### TD
-
-- 管理当前 Maya Node Editor 中的输入、输出与隔离显示；
-- 查看选择节点的属性和连接；
-- 生成节点网络的 Markdown 说明与 Mermaid 图；
-- 在安装 AuroraView 时，以内嵌 WebView 渲染 Mermaid；未安装时仍可使用文本输出。
 
 ## 安装与启动
 
@@ -75,7 +195,7 @@ MayaCraft 启动后以 `workspaceControl` 嵌入 Maya，包含六个标签页：
 
 - Autodesk Maya 2025；
 - Maya 自带 Python 3.11、PySide6 与 shiboken6；
-- AuroraView 为可选依赖，仅用于 TD 页的内嵌 Mermaid 预览。
+- Face 标签页额外依赖 PyMEL；未安装时仅该页显示依赖诊断，不影响其余标签页；
 
 ### 放置仓库
 
@@ -92,7 +212,13 @@ import MayaCraft.launch as launch
 launch.run()
 ```
 
-重复运行会先清理旧的 `MayaCraftWorkspaceControl`，再创建新的可停靠面板，并重载 `core`、`ui` 与 `utils` 下的开发模块。
+重复运行会先清理旧的 `MayaCraftWorkspaceControl`，再创建新的可停靠面板。普通艺术家会话不会自动重载全部模块；源码开发时可显式使用：
+
+```python
+launch.run(development=True)
+```
+
+每个旧模块独立加载。某个可选依赖或功能模块失败时，故障页会显示完整诊断，Character Workspace 和其余模块仍可使用。
 
 ## 工程结构
 
@@ -103,18 +229,37 @@ core/
 ├─ logic/            各标签页的 Maya 操作逻辑
 ├─ animation/        动画曲线能力
 └─ controller.py     控制器形状读写与替换
-ui/                  六个标签页与可折叠控件
+ui/                  绑定、面部、蒙皮、动画与通用制作标签页
+compat/              Maya 2025 的 PySide6 / shiboken6 宿主表面
 utils/               JSON、路径与开发期模块重载
 files/ma/            原始骨架模板
 files/shape/         控制器形状库
 files/poses/         Pose 数据与预览
 files/Rigged/        绑定示例资产及来源说明
 launch.py            Maya workspaceControl 启动入口
+docs/DEVELOPMENT_PLAN.md  产品边界、研究议程与分阶段开发计划
 ```
 
-## 当前边界
+## 展示版边界
 
-- 这是面向 Maya 2025 的开发版工具集，仓库没有安装器或 Maya Module 包；
+- 只支持 Maya 2025 / Python 3.11 / PySide6 6.5.3；
+- Rig Graph 已覆盖真实 FK、RP IK、Pole、FK/IK 混合和基础 Space Switch，但未开放带关键帧补偿的
+  FK/IK Match 与动画中无跳变 Space 切换；
+- Twist/Bendy/Guide 高级编辑、Face PSD/RBF 重写、拓扑变化蒙皮迁移暂不进入本版；
+- Face 仍是历史 PyMEL 实现，已与主界面隔离，但完整去除 PyMEL 需要后续专项重写；
 - 自动绑定依赖骨骼命名、标签和场景结构，投入实际制作前应在副本场景验证；
-- AuroraView 只增强 Mermaid 可视化，不是核心绑定功能的运行依赖；
+- 原 TD 页已迁出到独立 MayaScope 仓库，MayaCraft 不再新增通用 TD 功能；
 - 示例模型与贴图不是 MayaCraft 自有资产，二次使用前请阅读相应 `credit.txt`。
+
+## 开发验证
+
+离线与 mayapy 测试位于 `tests/`。真实 Maya 2025 GUI 的 workspaceControl、重复启动、
+热重载、callback 清理和关闭验证可直接运行：
+
+```powershell
+& .\tests\run_maya2025_gui_validation.ps1
+```
+
+验证器只操作它启动的新 Maya 进程，成功后自动退出并在 `tests/artifacts/` 写入 JSON
+报告和宿主截图。Hero Prototype 的逐项证据与未满足项见
+`docs/HERO_PROTOTYPE_AUDIT.md`。

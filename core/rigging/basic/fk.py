@@ -12,7 +12,7 @@ FK 控制器模块。
 import maya.cmds as cmds
 import math
 from typing import Optional, List
-from core import tool
+from MayaCraft.core import tool
 
 fk_sys = "FKSystem"
 

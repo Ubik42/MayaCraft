@@ -1,6 +1,6 @@
 import pymel.core as pm
-from core.face.utils import actions
-from core.face.utils import control
+from MayaCraft.core.face.utils import actions
+from MayaCraft.core.face.utils import control
 
 
 def puffer_rig(rl, oi):
