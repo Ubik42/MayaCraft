@@ -49,8 +49,8 @@ try:
     app.processEvents()
     assert workspace.skeleton.is_usable
     assert workspace.plan.can_apply
-    assert "73 个对象" in workspace.diff.text(), workspace.diff.text()
-    assert "34 条物理行为" in workspace.diff.text(), workspace.diff.text()
+    assert "97 个对象" in workspace.diff.text(), workspace.diff.text()
+    assert "42 条物理行为" in workspace.diff.text(), workspace.diff.text()
     # A real OS cursor is unavailable in background mayapy. Exercise the same
     # Qt signal path deterministically instead of depending on desktop focus.
     workspace.canvas.moduleHovered.emit("root")
@@ -65,7 +65,7 @@ try:
     app.processEvents()
     assert workspace.plan.is_noop
     assert workspace.receipt and workspace.receipt.verified
-    assert len(workspace.service.scan_behaviors(workspace.graph.graph_id)) == 34
+    assert len(workspace.service.scan_behaviors(workspace.graph.graph_id)) == 42
     hand_control = "|MC_RIG|MC_CONTROLS|L_arm_MOD|L_upperArm_FK_CTRL|L_forearm_FK_CTRL|L_hand_FK_CTRL"
     result_hand = "|MC_RIG|MC_DELIVERY|L_upperArm_RESULT_JNT|L_forearm_RESULT_JNT|L_hand_RESULT_JNT"
     ik_control = "|MC_RIG|MC_CONTROLS|L_arm_MOD|L_arm_IK_SPACE|L_hand_IK_CTRL"
@@ -121,6 +121,57 @@ try:
     assert "撤销验证通过" in workspace.match_status.text()
     match_undo = artifacts / "mayacraft_rig_match_undo_cn.png"
     assert window.grab().save(str(match_undo))
+
+    # Twist Hero: live quaternion probe -> zero-write profile -> apply/verify -> Undo -> blocker.
+    forearm_control = "|MC_RIG|MC_CONTROLS|L_arm_MOD|L_upperArm_FK_CTRL|L_forearm_FK_CTRL"
+    cmds.undoInfo(openChunk=True, chunkName="MayaCraft UI Twist Pose Probe")
+    cmds.setAttr(forearm_control + ".rotateX", 90.0)
+    cmds.undoInfo(closeChunk=True)
+    workspace.show_twist_panel()
+    workspace.twist_bias_slider.setValue(-65)
+    workspace.twist_ease_slider.setValue(85)
+    workspace.twist_intensity_slider.setValue(90)
+    workspace.preview_twist_profile()
+    app.processEvents()
+    assert workspace.pending_twist_plan and workspace.pending_twist_plan.can_apply
+    assert "零写入预览" in workspace.twist_status.text()
+    twist_preview = artifacts / "mayacraft_twist_preview_cn.png"
+    assert window.grab().save(str(twist_preview))
+    workspace.apply_twist_profile()
+    app.processEvents()
+    assert workspace.twist_receipt and workspace.twist_receipt.verified
+    assert "验证" in workspace.twist_status.text()
+    twist_verified = artifacts / "mayacraft_twist_verified_cn.png"
+    assert window.grab().save(str(twist_verified))
+    window.resize(760, 620)
+    app.processEvents()
+    assert workspace.twist_panel.isVisible()
+    assert workspace.twist_panel.geometry().bottom() <= workspace.height()
+    twist_narrow = artifacts / "mayacraft_twist_narrow_cn.png"
+    assert window.grab().save(str(twist_narrow))
+    window.resize(1120, 760)
+    app.processEvents()
+    workspace.undo_twist_profile()
+    app.processEvents()
+    assert workspace.twist_receipt is None
+    assert "撤销验证通过" in workspace.twist_status.text()
+    twist_undo = artifacts / "mayacraft_twist_undo_cn.png"
+    assert window.grab().save(str(twist_undo))
+    slerp = workspace.twist_service._slerp_nodes(cmds, "l_arm.twist.0")[0]
+    cmds.undoInfo(openChunk=True, chunkName="MayaCraft UI Twist Locked Probe")
+    cmds.setAttr(f"{slerp}.inputT", lock=True)
+    workspace.preview_twist_profile()
+    app.processEvents()
+    assert not workspace.pending_twist_plan.can_apply
+    assert "预检阻断" in workspace.twist_status.text()
+    twist_blocked = artifacts / "mayacraft_twist_blocked_cn.png"
+    assert window.grab().save(str(twist_blocked))
+    cmds.setAttr(f"{slerp}.inputT", lock=False)
+    cmds.undoInfo(closeChunk=True)
+    cmds.undo()
+    workspace.hide_twist_panel()
+    cmds.undo()
+
     cmds.undoInfo(openChunk=True, chunkName="MayaCraft UI Locked Match Probe")
     cmds.setAttr(ik_control + ".translateX", lock=True)
     workspace.preview_match("FK_TO_IK")
@@ -154,6 +205,7 @@ try:
     print(
         "MAYACRAFT_RIG_GRAPH_UI_OK", preview, verified, narrow,
         match_preview, match_verified, match_narrow, match_undo, match_blocked,
+        twist_preview, twist_verified, twist_narrow, twist_undo, twist_blocked,
     )
     window.shutdown()
     window.close()

@@ -962,3 +962,31 @@ Rig Graph 不再把带 `FK/IK` 名字的空 transform 当成功。本批把“�
 启动、重复打开清理、开发热重载与关闭清理，插件内启动 `199.362 ms`、关闭 `19.012 ms`，测试前后
 均无 Maya 残留进程；一键安装脚本支持零写入预览，并只向当前用户 Maya 2025 modules 目录写入经
 读回验证的 `MayaCraft.mod`。Twist/Bendy、Guide、Face PSD/RBF 和拓扑变化蒙皮迁移不扩入本 goal。
+
+### 2026-08-27 — Hero Slice 09：Quaternion Twist 能量塑形舱
+
+本批以作品集展示价值为第一优先，不再扩一排普通按钮，而是建立可直接录屏讲算法、网络和事务的
+单一 Hero：
+
+- 黄金双足由 73 对象 / 34 行为升级为 **97 对象 / 42 行为**。四条肢体各增加上、下两段，每段三枚
+  Twist 关节与独立 `twist_distribution` 行为；总计 24 枚实时关节和 8 套可物理反查的 DG 网络；
+- 宿主无关算法对相对四元数向量部沿任意骨段局部轴做投影，得到单位 Twist quaternion，再以
+  `swing = q × inverse(twist)` 分离 Swing。纯弯曲不会被当作 Twist，180° 退化和零轴明确处理；
+- Maya 2025 网络使用内置 `quatNodes`：`multMatrix → decomposeMatrix → dot/project → quatNormalize →
+  quatSlerp → quatToEuler`。90° 前臂扭转实测三枚关节为 `22.5° / 45° / 67.5°`，误差低于 `1e-6°`；
+- “分布偏置、缓入曲线、扭转强度”生成单调、端点安全的艺术曲线。`-0.65 / 85% / 90%` 得到
+  `54% / 85% / 90%`；拖动只改变动态能量场，明确预览后才允许修改真实 slerp 权重；
+- 应用执行预览指纹复核、单一命名 Undo chunk、逐节点读回和误差阈值验证；失败自动撤销，Undo 后
+  再次验证原权重。引用节点、锁定或已有输入连接会在写前红色阻断；
+- 原生 QPainter “Twist 能量场”用流动螺旋、发光关节和实时角度表达当前骨段。进入 Hero 模式自动
+  收起已完成构建摘要，让 Inspector 成为完整塑形工作区；宽版、760×620、成功、阻断、撤销均由
+  生产 Widget 实际渲染；
+- 新增 `mayacraft_twist_sculpt.ma` 确定性场景，五套演示素材继续不含第三方或公司资产。离线测试
+  增至 68 项，并新增 Maya 2025 quaternion DG、UI 和场景级验证。
+
+发布实测：5000 次 swing–twist 分解与三关节分布曲线生成耗时 **47.421 ms**，低于 140 ms 预算；
+独立隐藏 Maya 2025 PID `36676` 使用 `2.2.0.dev1 / PySide6` 完成首次启动、重复启动清理、开发热重载
+和关闭清理，插件内首次启动 `200.045 ms`、关闭 `16.314 ms`，测试前后均无 Maya 残留进程。
+
+Bendy 曲线、Guide 高级编辑、Face PSD/RBF 与拓扑变化蒙皮迁移仍不扩入本 Hero，避免为展示数量牺牲
+Twist 闭环的可信度。

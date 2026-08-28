@@ -9,6 +9,7 @@ from MayaCraft.adapters.maya.motion_capture import MayaMotionCapture
 from MayaCraft.adapters.maya.motion_anchor import MayaContactAnchorService
 from MayaCraft.adapters.maya.rig_graph import MayaRigGraphService
 from MayaCraft.adapters.maya.rig_switching import MayaRigSwitchService
+from MayaCraft.adapters.maya.twist_sculpt import MayaTwistSculptService
 from MayaCraft.adapters.maya.skeleton import MayaSkeletonScanner
 from MayaCraft.adapters.maya.skin_mirror import MayaSkinMirrorService
 
@@ -21,6 +22,7 @@ __all__ = [
     "MayaContactAnchorService",
     "MayaRigGraphService",
     "MayaRigSwitchService",
+    "MayaTwistSculptService",
     "MayaSkeletonScanner",
     "MayaSkinMirrorService",
 ]

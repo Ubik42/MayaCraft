@@ -100,6 +100,11 @@ from MayaCraft.domain.rig_switching import (
     maximum_matrix_error, maximum_position_error, plan_fk_ik_match,
     plan_space_switch, transform_fingerprint,
 )
+from MayaCraft.domain.twist_sculpt import (
+    TwistProfilePlan, TwistProfileReceipt, TwistSculptIssue,
+    compute_twist_profile, decompose_swing_twist, plan_twist_profile,
+    twist_profile_fingerprint,
+)
 
 __all__ = [
     "AttributeChange",
@@ -247,4 +252,11 @@ __all__ = [
     "plan_fk_ik_match",
     "plan_space_switch",
     "transform_fingerprint",
+    "TwistProfilePlan",
+    "TwistProfileReceipt",
+    "TwistSculptIssue",
+    "compute_twist_profile",
+    "decompose_swing_twist",
+    "plan_twist_profile",
+    "twist_profile_fingerprint",
 ]

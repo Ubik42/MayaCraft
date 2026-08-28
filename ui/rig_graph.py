@@ -6,9 +6,11 @@ import math
 
 from MayaCraft.adapters.maya.rig_graph import MayaRigGraphService
 from MayaCraft.adapters.maya.rig_switching import MayaRigSwitchService
+from MayaCraft.adapters.maya.twist_sculpt import MayaTwistSculptService
 from MayaCraft.adapters.maya.skeleton import MayaSkeletonScanner
 from MayaCraft.compat.qt import QtCore, QtGui, QtWidgets
 from MayaCraft.domain.rig_graph import bind_graph_to_skeleton, golden_biped_graph
+from MayaCraft.domain.twist_sculpt import compute_twist_profile
 from MayaCraft.ui.theme import ensure_ui_font
 
 UI_FONT_FAMILY = ensure_ui_font()
@@ -78,6 +80,84 @@ class RigMatchGauge(QtWidgets.QWidget):
         painter.setFont(QtGui.QFont(UI_FONT_FAMILY, 7, QtGui.QFont.Bold))
         painter.drawText(rect.adjusted(9, 0, -9, 0), QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft, f"FK {round((1.0 - self._blend) * 100):d}%")
         painter.drawText(rect.adjusted(9, 0, -9, 0), QtCore.Qt.AlignVCenter | QtCore.Qt.AlignRight, f"IK {round(self._blend * 100):d}%")
+
+
+class TwistEnergyField(QtWidgets.QWidget):
+    """Animated quaternion distribution ribbon for the active limb segment."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._weights = (0.25, 0.5, 0.75)
+        self._angle = 0.0
+        self._phase = 0.0
+        self.setMinimumHeight(106)
+        self._timer = QtCore.QTimer(self)
+        self._timer.setInterval(32)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start()
+
+    def set_state(self, weights, angle):
+        self._weights = tuple(float(value) for value in weights) or (0.0, 0.0, 0.0)
+        self._angle = float(angle)
+        self.update()
+
+    def _tick(self):
+        self._phase = (self._phase + 0.016) % 1.0
+        if self.isVisible():
+            self.update()
+
+    def paintEvent(self, _event):
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        rect = QtCore.QRectF(1, 1, self.width() - 2, self.height() - 2)
+        background = QtGui.QLinearGradient(rect.topLeft(), rect.bottomRight())
+        background.setColorAt(0.0, QtGui.QColor("#081824"))
+        background.setColorAt(0.55, QtGui.QColor("#15102A"))
+        background.setColorAt(1.0, QtGui.QColor("#20101D"))
+        painter.setBrush(background)
+        painter.setPen(QtGui.QPen(QtGui.QColor("#3B5570"), 1))
+        painter.drawRoundedRect(rect, 10, 10)
+        left, right = rect.left() + 24.0, rect.right() - 24.0
+        center_y = rect.center().y() + 4.0
+        painter.setPen(QtGui.QPen(QtGui.QColor(66, 232, 255, 75), 2))
+        painter.drawLine(QtCore.QPointF(left, center_y), QtCore.QPointF(right, center_y))
+        helix = QtGui.QPainterPath()
+        samples = 72
+        amplitude = 8.0 + min(10.0, abs(self._angle) / 18.0)
+        for index in range(samples + 1):
+            t = index / samples
+            x = left + (right - left) * t
+            y = center_y + math.sin((t * 3.0 + self._phase) * math.tau) * amplitude
+            helix.moveTo(x, y) if index == 0 else helix.lineTo(x, y)
+        helix_gradient = QtGui.QLinearGradient(left, 0, right, 0)
+        helix_gradient.setColorAt(0.0, QtGui.QColor("#42E8FF"))
+        helix_gradient.setColorAt(0.5, QtGui.QColor("#B46BFF"))
+        helix_gradient.setColorAt(1.0, QtGui.QColor("#FF6E8A"))
+        painter.setPen(QtGui.QPen(QtGui.QBrush(helix_gradient), 2.2))
+        painter.drawPath(helix)
+        for index, weight in enumerate(self._weights):
+            x = left + (right - left) * ((index + 1) / (len(self._weights) + 1))
+            radius = 7.0 + weight * 7.0
+            glow = QtGui.QRadialGradient(QtCore.QPointF(x, center_y), radius * 1.8)
+            glow.setColorAt(0.0, QtGui.QColor(167, 255, 106, 150))
+            glow.setColorAt(1.0, QtGui.QColor(167, 255, 106, 0))
+            painter.setPen(QtCore.Qt.NoPen)
+            painter.setBrush(glow)
+            painter.drawEllipse(QtCore.QPointF(x, center_y), radius * 1.8, radius * 1.8)
+            painter.setBrush(QtGui.QColor("#0A1018"))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#A7FF6A"), 2))
+            painter.drawEllipse(QtCore.QPointF(x, center_y), radius, radius)
+            painter.setPen(QtGui.QColor("#EAF8D9"))
+            painter.setFont(QtGui.QFont(UI_FONT_FAMILY, 7, QtGui.QFont.Bold))
+            painter.drawText(
+                QtCore.QRectF(x - 22, center_y - 7, 44, 14),
+                QtCore.Qt.AlignCenter, f"{round(weight * 100):d}",
+            )
+        painter.setFont(QtGui.QFont(UI_FONT_FAMILY, 7, QtGui.QFont.Bold))
+        painter.setPen(QtGui.QColor("#42E8FF"))
+        painter.drawText(rect.adjusted(10, 6, -10, 0), QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft, "SWING–TWIST / 四元数能量场")
+        painter.setPen(QtGui.QColor("#FFB15C"))
+        painter.drawText(rect.adjusted(10, 6, -10, 0), QtCore.Qt.AlignTop | QtCore.Qt.AlignRight, f"{self._angle:+.1f}°")
 
 
 class RigGraphCanvas(QtWidgets.QWidget):
@@ -284,6 +364,7 @@ class RigGraphWorkspace(QtWidgets.QWidget):
         self.scanner = MayaSkeletonScanner()
         self.service = MayaRigGraphService()
         self.switch_service = MayaRigSwitchService(self.service)
+        self.twist_service = MayaTwistSculptService(self.service)
         self.skeleton = None
         self.plan = None
         self.receipt = None
@@ -292,6 +373,9 @@ class RigGraphWorkspace(QtWidgets.QWidget):
         self.pending_switch_kind = ""
         self.switch_receipt = None
         self.switch_receipt_kind = ""
+        self.twist_mode = False
+        self.pending_twist_plan = None
+        self.twist_receipt = None
         self._build_ui()
         self.refresh_plan()
 
@@ -397,6 +481,10 @@ class RigGraphWorkspace(QtWidgets.QWidget):
         action_row.addWidget(self.match_apply_button, 1)
         action_row.addWidget(self.match_undo_button)
         match_layout.addLayout(action_row)
+        self.twist_entry_button = QtWidgets.QPushButton("进入 Twist 能量塑形舱  ↗")
+        self.twist_entry_button.setObjectName("TwistEntry")
+        self.twist_entry_button.clicked.connect(self.show_twist_panel)
+        match_layout.addWidget(self.twist_entry_button)
         self.match_panel.setStyleSheet(
             "QFrame#RigMatchCapsule{background:#0C1420;border:1px solid #35566A;border-radius:10px;}"
             "QPushButton#RigMatchFKToIK{color:#071015;background:#42E8FF;border:0;}"
@@ -405,10 +493,85 @@ class RigGraphWorkspace(QtWidgets.QWidget):
             "QPushButton#RigMatchIKToFK:disabled{color:#79516A;background:#33192C;}"
             "QPushButton#RigMatchApply{color:#071008;background:#A7FF6A;border:0;font-weight:900;}"
             "QPushButton#RigMatchApply:disabled{color:#5D6B58;background:#233323;}"
+            "QPushButton#TwistEntry{color:#F7E9FF;background:#3B2057;border:1px solid #9D6CFF;}"
             "QComboBox{min-height:30px;color:#DCE5FA;background:#111827;border:1px solid #354158;border-radius:7px;padding:0 8px;}"
         )
         self.match_panel.setVisible(False)
         side.addWidget(self.match_panel)
+
+        self.twist_panel = QtWidgets.QFrame()
+        self.twist_panel.setObjectName("TwistSculptCapsule")
+        twist_layout = QtWidgets.QVBoxLayout(self.twist_panel)
+        twist_layout.setContentsMargins(10, 10, 10, 10)
+        twist_layout.setSpacing(7)
+        twist_header = QtWidgets.QHBoxLayout()
+        self.twist_back_button = QtWidgets.QPushButton("‹ 返回匹配")
+        self.twist_back_button.setObjectName("TwistBack")
+        self.twist_back_button.clicked.connect(self.hide_twist_panel)
+        self.twist_title = QtWidgets.QLabel("Twist 能量塑形舱")
+        self.twist_title.setStyleSheet("color:#F4F7FF;font-size:10px;font-weight:900;")
+        twist_header.addWidget(self.twist_back_button)
+        twist_header.addWidget(self.twist_title, 1, QtCore.Qt.AlignRight)
+        twist_layout.addLayout(twist_header)
+        self.twist_field = TwistEnergyField()
+        twist_layout.addWidget(self.twist_field)
+        self.twist_segment_combo = QtWidgets.QComboBox()
+        self.twist_segment_combo.addItems(("上段 · 肩/髋 → 肘/膝", "下段 · 肘/膝 → 腕/踝"))
+        self.twist_segment_combo.currentIndexChanged.connect(self._twist_values_changed)
+        twist_layout.addWidget(self.twist_segment_combo)
+
+        self.twist_bias_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self.twist_bias_slider.setRange(-100, 100)
+        self.twist_bias_slider.setValue(0)
+        self.twist_ease_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self.twist_ease_slider.setRange(0, 100)
+        self.twist_ease_slider.setValue(65)
+        self.twist_intensity_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self.twist_intensity_slider.setRange(0, 100)
+        self.twist_intensity_slider.setValue(100)
+        self.twist_bias_label = QtWidgets.QLabel()
+        self.twist_ease_label = QtWidgets.QLabel()
+        self.twist_intensity_label = QtWidgets.QLabel()
+        for label, slider in (
+            (self.twist_bias_label, self.twist_bias_slider),
+            (self.twist_ease_label, self.twist_ease_slider),
+            (self.twist_intensity_label, self.twist_intensity_slider),
+        ):
+            label.setStyleSheet("color:#C5CEE2;font-size:8px;font-weight:700;")
+            twist_layout.addWidget(label)
+            twist_layout.addWidget(slider)
+            slider.valueChanged.connect(self._twist_values_changed)
+        self.twist_status = QtWidgets.QLabel("拖动参数观察能量带，再生成零写入计划。")
+        self.twist_status.setWordWrap(True)
+        self.twist_status.setMinimumHeight(30)
+        self.twist_status.setStyleSheet("color:#8791A8;font-size:8px;")
+        twist_layout.addWidget(self.twist_status)
+        twist_actions = QtWidgets.QHBoxLayout()
+        self.twist_preview_button = QtWidgets.QPushButton("预览分布")
+        self.twist_preview_button.clicked.connect(self.preview_twist_profile)
+        self.twist_apply_button = QtWidgets.QPushButton("应用并验证")
+        self.twist_apply_button.setObjectName("TwistApply")
+        self.twist_apply_button.setEnabled(False)
+        self.twist_apply_button.clicked.connect(self.apply_twist_profile)
+        self.twist_undo_button = QtWidgets.QPushButton("撤销")
+        self.twist_undo_button.setEnabled(False)
+        self.twist_undo_button.clicked.connect(self.undo_twist_profile)
+        twist_actions.addWidget(self.twist_preview_button)
+        twist_actions.addWidget(self.twist_apply_button, 1)
+        twist_actions.addWidget(self.twist_undo_button)
+        twist_layout.addLayout(twist_actions)
+        self.twist_panel.setStyleSheet(
+            "QFrame#TwistSculptCapsule{background:#0B111C;border:1px solid #7650B4;border-radius:10px;}"
+            "QPushButton#TwistBack{color:#B6C3DB;background:transparent;border:0;text-align:left;padding:0;}"
+            "QPushButton#TwistApply{color:#13091A;background:#D884FF;border:0;font-weight:900;}"
+            "QPushButton#TwistApply:disabled{color:#655070;background:#2D2035;}"
+            "QComboBox{min-height:30px;color:#F4E9FF;background:#1B1026;border:1px solid #5A397B;border-radius:7px;padding:0 8px;}"
+            "QSlider::groove:horizontal{height:4px;background:#253047;border-radius:2px;}"
+            "QSlider::sub-page:horizontal{background:#B46BFF;border-radius:2px;}"
+            "QSlider::handle:horizontal{width:13px;margin:-5px 0;background:#A7FF6A;border:2px solid #0B111C;border-radius:7px;}"
+        )
+        self.twist_panel.setVisible(False)
+        side.addWidget(self.twist_panel)
         side.addStretch(1)
         self.detail = QtWidgets.QLabel("悬停模块以查看编译状态。")
         self.detail.setProperty("muted", True)
@@ -418,8 +581,8 @@ class RigGraphWorkspace(QtWidgets.QWidget):
 
     def resizeEvent(self, event):
         compact = self.height() < 580
-        self.summary.setVisible(not compact)
-        self.detail.setVisible(not compact)
+        self.summary.setVisible(not compact and not self.twist_mode)
+        self.detail.setVisible(not compact and not self.twist_mode)
         self.diff.setMinimumHeight(76 if compact else 104)
         self.diff.setMaximumHeight(82 if compact else 16777215)
         margin = 12 if compact else 18
@@ -545,7 +708,8 @@ class RigGraphWorkspace(QtWidgets.QWidget):
         if ready and not self.active_limb:
             self.active_limb = "l_arm"
         visible = ready and self.active_limb in {"l_arm", "r_arm", "l_leg", "r_leg"}
-        self.match_panel.setVisible(visible)
+        self.match_panel.setVisible(visible and not self.twist_mode)
+        self.twist_panel.setVisible(visible and self.twist_mode)
         self.preview_button.setVisible(not ready)
         self.apply_button.setVisible(not ready)
         if not visible:
@@ -560,6 +724,8 @@ class RigGraphWorkspace(QtWidgets.QWidget):
         self.space_combo.blockSignals(True)
         self.space_combo.setCurrentIndex(max(0, min(1, space_probe.previous_space)))
         self.space_combo.blockSignals(False)
+        if self.twist_mode:
+            self._refresh_twist_panel()
 
     def _show_switch_plan(self, plan, kind):
         self.pending_switch_plan = plan
@@ -656,5 +822,148 @@ class RigGraphWorkspace(QtWidgets.QWidget):
         self.statusChanged.emit("无跳变动画操作已撤销并验证")
         self._refresh_match_panel()
 
+    def show_twist_panel(self):
+        self.twist_mode = True
+        self.pending_twist_plan = None
+        for widget in (
+            self.summary, self.signal, self.capture_button, self.diff,
+            self.preview_button, self.apply_button, self.undo_button, self.detail,
+        ):
+            widget.setVisible(False)
+        self.match_panel.setVisible(False)
+        self.twist_panel.setVisible(True)
+        self._refresh_twist_panel()
+        self.statusChanged.emit("已进入 quaternion Twist 能量塑形舱")
 
-__all__ = ["RigGraphCanvas", "RigGraphWorkspace", "RigMatchGauge"]
+    def hide_twist_panel(self):
+        self.twist_mode = False
+        self.pending_twist_plan = None
+        self.twist_panel.setVisible(False)
+        compact = self.height() < 580
+        self.summary.setVisible(not compact)
+        self.detail.setVisible(not compact)
+        self.signal.setVisible(True)
+        self.capture_button.setVisible(True)
+        self.diff.setVisible(True)
+        self.undo_button.setVisible(True)
+        self._refresh_match_panel()
+
+    def _twist_parameters(self):
+        return (
+            self.twist_bias_slider.value() / 100.0,
+            self.twist_ease_slider.value() / 100.0,
+            self.twist_intensity_slider.value() / 100.0,
+        )
+
+    def _refresh_twist_panel(self):
+        if not self.active_limb:
+            return
+        bias, ease, intensity = self._twist_parameters()
+        segment = self.twist_segment_combo.currentIndex()
+        plan = self.twist_service.plan_profile(
+            self.graph, self.active_limb, segment, bias, ease, intensity,
+        )
+        try:
+            angle = self.twist_service.probe_twist_angle(
+                self.graph, self.active_limb, segment,
+            )
+        except Exception:
+            angle = 0.0
+        weights = plan.previous_weights or compute_twist_profile(3, bias, ease, intensity)
+        self.twist_field.set_state(weights, angle)
+        self.twist_title.setText(f"{MODULE_LABELS.get(self.active_limb, self.active_limb)} / Twist 塑形")
+        self.twist_bias_label.setText(f"分布偏置  {bias:+.2f}  ·  左侧更早 / 右侧更晚")
+        self.twist_ease_label.setText(f"缓入曲线  {round(ease * 100):d}%")
+        self.twist_intensity_label.setText(f"扭转强度  {round(intensity * 100):d}%")
+        if plan.blockers:
+            self.twist_status.setStyleSheet("color:#FF7B93;font-size:8px;")
+            self.twist_status.setText("塑形阻断 / " + " · ".join(item.message for item in plan.blockers[:2]))
+        self.twist_apply_button.setEnabled(False)
+
+    def _twist_values_changed(self, *_args):
+        bias, ease, intensity = self._twist_parameters()
+        self.twist_bias_label.setText(f"分布偏置  {bias:+.2f}  ·  左侧更早 / 右侧更晚")
+        self.twist_ease_label.setText(f"缓入曲线  {round(ease * 100):d}%")
+        self.twist_intensity_label.setText(f"扭转强度  {round(intensity * 100):d}%")
+        try:
+            angle = self.twist_service.probe_twist_angle(
+                self.graph, self.active_limb, self.twist_segment_combo.currentIndex(),
+            ) if self.active_limb else 0.0
+            weights = compute_twist_profile(3, bias, ease, intensity)
+        except Exception:
+            angle, weights = 0.0, (0.0, 0.0, 0.0)
+        self.twist_field.set_state(weights, angle)
+        self.pending_twist_plan = None
+        self.twist_apply_button.setEnabled(False)
+        self.twist_status.setStyleSheet("color:#B6A2D7;font-size:8px;")
+        self.twist_status.setText("参数已改变 / 当前仅更新可视化，点击“预览分布”检查 Maya 场景。")
+
+    def preview_twist_profile(self):
+        if not self.active_limb:
+            return
+        bias, ease, intensity = self._twist_parameters()
+        plan = self.twist_service.plan_profile(
+            self.graph, self.active_limb, self.twist_segment_combo.currentIndex(),
+            bias, ease, intensity,
+        )
+        self.pending_twist_plan = plan
+        self.twist_field.set_state(plan.target_weights or plan.previous_weights, self.twist_service.probe_twist_angle(
+            self.graph, self.active_limb, self.twist_segment_combo.currentIndex(),
+        ))
+        self.twist_apply_button.setEnabled(plan.can_apply)
+        if plan.blockers:
+            self.twist_status.setStyleSheet("color:#FF7B93;font-size:8px;")
+            self.twist_status.setText("预检阻断 / " + " · ".join(item.message for item in plan.blockers[:2]))
+        elif not plan.can_apply:
+            self.twist_status.setStyleSheet("color:#FFDB69;font-size:8px;")
+            self.twist_status.setText("当前分布已与目标一致，无需写入。")
+        else:
+            values = "  ·  ".join(f"J{index + 1} {value:.0%}" for index, value in enumerate(plan.target_weights))
+            self.twist_status.setStyleSheet("color:#42E8FF;font-size:8px;")
+            self.twist_status.setText(f"零写入预览 / {values}\n将更新实时 quaternion slerp 权重。")
+        self.statusChanged.emit("Twist 分布零写入计划已生成")
+
+    def apply_twist_profile(self):
+        if not self.pending_twist_plan or not self.pending_twist_plan.can_apply:
+            return
+        self.twist_apply_button.setEnabled(False)
+        self.twist_apply_button.setText("正在塑形…")
+        QtWidgets.QApplication.processEvents()
+        try:
+            self.twist_receipt = self.twist_service.apply_profile(
+                self.graph, self.pending_twist_plan,
+            )
+        except Exception as exc:
+            self.twist_status.setStyleSheet("color:#FF7B93;font-size:8px;")
+            self.twist_status.setText(f"事务已回滚 / {type(exc).__name__}: {exc}")
+            self.twist_apply_button.setText("重新预览")
+            self.statusChanged.emit("Twist 塑形失败，场景已恢复")
+            return
+        self.pending_twist_plan = None
+        self.twist_apply_button.setText("验证通过")
+        self.twist_undo_button.setEnabled(True)
+        self.twist_status.setStyleSheet("color:#A7FF6A;font-size:8px;font-weight:800;")
+        self.twist_status.setText(self.twist_receipt.message + "\n实时 Twist 关节已更新，可整块撤销。")
+        self.statusChanged.emit(self.twist_receipt.message)
+
+    def undo_twist_profile(self):
+        if not self.twist_receipt:
+            return
+        try:
+            restored = self.twist_service.undo_profile(self.graph, self.twist_receipt)
+        except Exception as exc:
+            restored = False
+            self.twist_status.setText(f"撤销验证失败 / {type(exc).__name__}: {exc}")
+        if not restored:
+            self.statusChanged.emit("Twist 撤销未能验证，请检查 Maya Undo 队列")
+            return
+        self.twist_receipt = None
+        self.twist_undo_button.setEnabled(False)
+        self.twist_apply_button.setText("应用并验证")
+        self.twist_status.setStyleSheet("color:#A7FF6A;font-size:8px;")
+        self.twist_status.setText("撤销验证通过 / 三枚 Twist 权重和实时关节姿态均已恢复。")
+        self.statusChanged.emit("Twist 能量塑形已撤销并验证")
+        self._refresh_twist_panel()
+
+
+__all__ = ["RigGraphCanvas", "RigGraphWorkspace", "RigMatchGauge", "TwistEnergyField"]

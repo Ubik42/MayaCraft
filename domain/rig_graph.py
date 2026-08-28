@@ -184,7 +184,7 @@ def validate_rig_graph(graph: RigGraphSpec) -> Tuple[RigGraphIssue, ...]:
     behavior_ids = [behavior.stable_id for behavior in graph.behaviors]
     if len(set(behavior_ids)) != len(behavior_ids):
         issues.append(RigGraphIssue("duplicate_behavior", "行为稳定 ID 必须唯一", graph.graph_id))
-    allowed_behaviors = {"matrix_drive", "matrix_blend", "rp_ik", "space_switch"}
+    allowed_behaviors = {"matrix_drive", "matrix_blend", "rp_ik", "space_switch", "twist_distribution"}
     for module in graph.modules:
         for dependency in module.depends_on:
             if dependency not in modules:
@@ -214,6 +214,8 @@ def validate_rig_graph(graph: RigGraphSpec) -> Tuple[RigGraphIssue, ...]:
                 issues.append(RigGraphIssue("rp_ik_arity", f"RP IK {behavior.stable_id} 必须包含末端、Pole 和三段关节", behavior.stable_id))
             if behavior.behavior_type == "space_switch" and (len(behavior.sources) < 3 or len(behavior.targets) != 1):
                 issues.append(RigGraphIssue("space_switch_arity", f"空间切换 {behavior.stable_id} 至少需要两个空间、一个选择器和一个目标", behavior.stable_id))
+            if behavior.behavior_type == "twist_distribution" and (len(behavior.sources) != 2 or len(behavior.targets) < 1):
+                issues.append(RigGraphIssue("twist_distribution_arity", f"Twist 分配 {behavior.stable_id} 必须包含起止驱动和至少一个扭转关节", behavior.stable_id))
     _order, cycle = _topological_order(graph.modules)
     if cycle:
         issues.append(RigGraphIssue("module_cycle", "模块依赖图存在循环", cycle))
@@ -511,6 +513,32 @@ def golden_biped_graph(graph_id="mayaCraftBiped") -> RigGraphSpec:
             (f"{module_id}.ik.space",),
             (("selectorAttribute", "space"), ("spaceLabels", "全局|胸口")),
         ))
+        for segment_index in range(2):
+            twist_ids = []
+            for twist_index, fraction in enumerate((0.25, 0.5, 0.75)):
+                twist_id = f"{module_id}.twist.{segment_index}.{twist_index}"
+                twist_ids.append(twist_id)
+                nodes.append(RigNodeSpec(
+                    twist_id,
+                    f"{side}_{parts[segment_index]}_TWIST_{twist_index + 1:02d}_JNT",
+                    "joint", module_id, "deform", f"{module_id}.deform.{segment_index}",
+                    (
+                        ("twistStartRole", roles[segment_index]),
+                        ("twistEndRole", roles[segment_index + 1]),
+                        ("twistFraction", f"{fraction:.2f}"),
+                    ),
+                ))
+            behaviors.append(RigBehaviorSpec(
+                f"{module_id}.twist.{segment_index}", "twist_distribution", module_id,
+                (f"{module_id}.deform.{segment_index}", f"{module_id}.deform.{segment_index + 1}"),
+                tuple(twist_ids),
+                (
+                    ("aimAxis", "1,0,0"),
+                    ("startRole", roles[segment_index]),
+                    ("endRole", roles[segment_index + 1]),
+                    ("weights", "0.25|0.5|0.75"),
+                ),
+            ))
         dependencies = dependency if isinstance(dependency, tuple) else (dependency,)
         return RigModuleSpec(
             module_id, "ikfk_limb", label, side="left" if side == "L" else "right",
@@ -559,6 +587,24 @@ def bind_graph_to_skeleton(graph: RigGraphSpec, analysis) -> RigGraphSpec:
     if missing_roles:
         raise ValueError("黄金双足模板缺少必要骨架语义：" + "、".join(missing_roles))
     modules = []
+
+    def world_to_local_vector(vector, quaternion):
+        x, y, z, w = (float(value) for value in quaternion)
+        length = math.sqrt(x * x + y * y + z * z + w * w)
+        if length <= 1e-12:
+            raise ValueError("骨架关节方向四元数长度为零")
+        x, y, z, w = x / length, y / length, z / length, w / length
+        vx, vy, vz = (float(value) for value in vector)
+        # q^-1 * v * q, expanded to avoid host-specific math types.
+        tx = 2.0 * (-y * vz + z * vy)
+        ty = 2.0 * (-z * vx + x * vz)
+        tz = 2.0 * (-x * vy + y * vx)
+        return (
+            vx + w * tx + (-y * tz + z * ty),
+            vy + w * ty + (-z * tx + x * tz),
+            vz + w * tz + (-x * ty + y * tx),
+        )
+
     for module in graph.modules:
         nodes = []
         for node in module.nodes:
@@ -592,6 +638,50 @@ def bind_graph_to_skeleton(graph: RigGraphSpec, analysis) -> RigGraphSpec:
                         "worldQuaternion": "0,0,0,1",
                     })
                     node = replace(node, attributes=tuple(sorted(declared.items())))
+            twist_start = declared.get("twistStartRole", "")
+            twist_end = declared.get("twistEndRole", "")
+            if twist_start and twist_end:
+                start_semantic = semantic_by_role.get(twist_start)
+                end_semantic = semantic_by_role.get(twist_end)
+                start_joint = observations.get(start_semantic.path) if start_semantic else None
+                end_joint = observations.get(end_semantic.path) if end_semantic else None
+                if start_joint and end_joint:
+                    fraction = float(declared.get("twistFraction", "0.5"))
+                    position = tuple(
+                        start_joint.position[index] +
+                        (end_joint.position[index] - start_joint.position[index]) * fraction
+                        for index in range(3)
+                    )
+                    declared.update({
+                        "sourceJoint": start_joint.path,
+                        "worldPosition": ",".join(f"{value:.9g}" for value in position),
+                        "worldQuaternion": ",".join(f"{value:.9g}" for value in start_joint.orientation),
+                    })
+                    node = replace(node, attributes=tuple(sorted(declared.items())))
             nodes.append(node)
-        modules.append(replace(module, nodes=tuple(nodes)))
+        behaviors = []
+        for behavior in module.behaviors:
+            if behavior.behavior_type != "twist_distribution":
+                behaviors.append(behavior)
+                continue
+            settings = dict(behavior.settings)
+            start_semantic = semantic_by_role.get(settings.get("startRole", ""))
+            end_semantic = semantic_by_role.get(settings.get("endRole", ""))
+            start_joint = observations.get(start_semantic.path) if start_semantic else None
+            end_joint = observations.get(end_semantic.path) if end_semantic else None
+            if not start_joint or not end_joint:
+                behaviors.append(behavior)
+                continue
+            world_delta = tuple(
+                end_joint.position[index] - start_joint.position[index] for index in range(3)
+            )
+            local_axis = world_to_local_vector(world_delta, start_joint.orientation)
+            axis_length = math.sqrt(sum(value * value for value in local_axis))
+            if axis_length <= 1e-8:
+                raise ValueError(f"{behavior.stable_id} 的 Twist 骨段长度为零")
+            settings["aimAxis"] = ",".join(
+                f"{value / axis_length:.9g}" for value in local_axis
+            )
+            behaviors.append(replace(behavior, settings=tuple(sorted(settings.items()))))
+        modules.append(replace(module, nodes=tuple(nodes), behaviors=tuple(behaviors)))
     return replace(graph, modules=tuple(modules))

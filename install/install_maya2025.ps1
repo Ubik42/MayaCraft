@@ -14,11 +14,11 @@ $moduleDirectory = [System.IO.Path]::GetFullPath($DestinationRoot)
 $moduleFile = Join-Path $moduleDirectory "MayaCraft.mod"
 $normalizedModuleRoot = (Join-Path $repoRoot "install\module").Replace("\", "/")
 $moduleText = @(
-    "+ MayaCraft 2.1 $normalizedModuleRoot"
+    "+ MayaCraft 2.2 $normalizedModuleRoot"
 ) -join [Environment]::NewLine
 $moduleText += [Environment]::NewLine
 
-Write-Output "MayaCraft 2.1 / Maya 2025 安装计划"
+Write-Output "MayaCraft 2.2 / Maya 2025 安装计划"
 Write-Output "模块文件：$moduleFile"
 Write-Output "Python 包目录：$packageParent"
 Write-Output ""

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sys
 import tempfile
 from pathlib import Path
@@ -32,6 +33,7 @@ from MayaCraft.domain.rig_graph import (
 from MayaCraft.domain.rig_switching import (
     RigTransformSample, plan_fk_ik_match, plan_space_switch,
 )
+from MayaCraft.domain.twist_sculpt import compute_twist_profile, decompose_swing_twist
 
 
 nodes = tuple(
@@ -293,6 +295,18 @@ for index in range(switch_iterations):
     )
 rig_switch_ms = (perf_counter() - started) * 1000.0
 
+twist_iterations = 5000
+started = perf_counter()
+for index in range(twist_iterations):
+    twist_angle = (index % 181) * 0.5
+    radians = twist_angle * 0.5 * 3.141592653589793 / 180.0
+    decompose_swing_twist(
+        (math.sin(radians), 0.0, 0.0, math.cos(radians)),
+        (1.0, 0.0, 0.0),
+    )
+    twist_profile = compute_twist_profile(3, (index % 101) / 100.0 - 0.5, 0.75, 0.9)
+twist_sculpt_ms = (perf_counter() - started) * 1000.0
+
 result = {
     "canvas_nodes": len(nodes),
     "canvas_project_and_hit_mean_ms": round(canvas_ms, 4),
@@ -354,6 +368,16 @@ result = {
         and match_plan.can_apply
         and space_plan.can_apply
     ),
+    "twist_sculpt_iterations": twist_iterations,
+    "twist_sculpt_ms": round(twist_sculpt_ms, 3),
+    "twist_sculpt_budget_ms": 140.0,
+    "twist_sculpt_passed": (
+        twist_sculpt_ms <= 140.0
+        and abs(twist_angle - decompose_swing_twist(
+            (math.sin(radians), 0.0, 0.0, math.cos(radians)), (1.0, 0.0, 0.0)
+        )[2]) < 1e-6
+        and len(twist_profile) == 3
+    ),
 }
 output = Path(__file__).with_name("artifacts") / "domain_benchmark.json"
 output.parent.mkdir(exist_ok=True)
@@ -373,3 +397,5 @@ if not result["rig_graph_passed"]:
     raise SystemExit("Rig Graph compile budget exceeded")
 if not result["rig_switch_plan_passed"]:
     raise SystemExit("Rig switching plan budget exceeded")
+if not result["twist_sculpt_passed"]:
+    raise SystemExit("Twist sculpt algorithm budget exceeded")

@@ -42,6 +42,10 @@ from MayaCraft.domain.rig_switching import (
     plan_space_switch,
     transform_fingerprint,
 )
+from MayaCraft.domain.twist_sculpt import (
+    compute_twist_profile, decompose_swing_twist, plan_twist_profile,
+    quaternion_product, twist_profile_fingerprint,
+)
 from MayaCraft.domain.skeleton import JointObservation, SemanticJoint, SkeletonAnalysis, analyze_skeleton
 from MayaCraft.domain.skin_mirror import (
     InfluenceObservation, SkinVertexObservation, build_influence_mirror_map, plan_skin_mirror,
@@ -356,10 +360,13 @@ class PackageTests(unittest.TestCase):
         self.assertLess(order.index("root"), order.index("spine"))
         self.assertLess(order.index("spine"), order.index("l_arm"))
         self.assertEqual(len(graph.modules), 7)
-        self.assertEqual(len(graph.nodes), 73)
-        self.assertEqual(len(graph.behaviors), 34)
+        self.assertEqual(len(graph.nodes), 97)
+        self.assertEqual(len(graph.behaviors), 42)
         behavior_types = {item.behavior_type for item in graph.behaviors}
-        self.assertEqual(behavior_types, {"matrix_drive", "matrix_blend", "rp_ik", "space_switch"})
+        self.assertEqual(
+            behavior_types,
+            {"matrix_drive", "matrix_blend", "rp_ik", "space_switch", "twist_distribution"},
+        )
 
     def test_rig_graph_empty_scene_compiles_to_deterministic_creates(self) -> None:
         graph = golden_biped_graph()
@@ -1399,6 +1406,64 @@ class PackageTests(unittest.TestCase):
                 actual, ghost, profile,
                 settings=ContactIKSettings(ground_normal=(0.0, 0.0, 0.0)),
             )
+
+
+class TwistSculptTests(unittest.TestCase):
+    def test_swing_twist_isolates_arbitrary_axis(self) -> None:
+        half = 2 ** -0.5
+        swing, twist, angle = decompose_swing_twist((half, 0.0, 0.0, half), (1.0, 0.0, 0.0))
+        self.assertAlmostEqual(angle, 90.0, places=6)
+        self.assertAlmostEqual(abs(twist[0]), half, places=6)
+        self.assertAlmostEqual(abs(swing[3]), 1.0, places=6)
+
+        _swing, _twist, no_twist = decompose_swing_twist(
+            (0.0, half, 0.0, half), (1.0, 0.0, 0.0)
+        )
+        self.assertAlmostEqual(no_twist, 0.0, places=6)
+        axis_component = (2 ** -0.5) * 0.5
+        _swing, _twist, diagonal_twist = decompose_swing_twist(
+            (axis_component, axis_component, 0.0, math.sqrt(3.0) * 0.5),
+            (1.0, 1.0, 0.0),
+        )
+        self.assertAlmostEqual(diagonal_twist, 60.0, places=6)
+        _swing, _twist, singular_angle = decompose_swing_twist(
+            (0.0, 1.0, 0.0, 0.0), (1.0, 0.0, 0.0)
+        )
+        self.assertAlmostEqual(singular_angle, 0.0, places=6)
+
+    def test_swing_and_twist_recompose(self) -> None:
+        half = 2 ** -0.5
+        source = quaternion_product(
+            (0.0, half, 0.0, half),
+            (half, 0.0, 0.0, half),
+        )
+        swing, twist, angle = decompose_swing_twist(source, (1.0, 0.0, 0.0))
+        recomposed = quaternion_product(swing, twist)
+        self.assertGreater(abs(sum(a * b for a, b in zip(source, recomposed))), 0.999999)
+        self.assertAlmostEqual(angle, 90.0, places=6)
+
+    def test_profile_is_monotonic_and_artistically_biased(self) -> None:
+        neutral = compute_twist_profile(5, bias=0.0, ease=0.65, intensity=1.0)
+        start_heavy = compute_twist_profile(5, bias=-0.75, ease=0.65, intensity=1.0)
+        end_heavy = compute_twist_profile(5, bias=0.75, ease=0.65, intensity=1.0)
+        self.assertEqual(neutral, tuple(sorted(neutral)))
+        self.assertGreater(start_heavy[0], neutral[0])
+        self.assertLess(end_heavy[0], neutral[0])
+        self.assertTrue(all(0.0 <= value <= 1.0 for value in neutral))
+
+    def test_profile_plan_is_deterministic_and_blocks_bad_input(self) -> None:
+        previous = (0.2, 0.5, 0.8)
+        plan = plan_twist_profile("hero", "l_arm", 12.0, previous, -0.3, 0.8, 0.9)
+        self.assertTrue(plan.can_apply)
+        self.assertEqual(
+            plan.observed_fingerprint,
+            twist_profile_fingerprint("l_arm", 12.0, previous),
+        )
+        blocked = plan_twist_profile("hero", "l_arm", 12.0, (), 0.0, 0.5, 1.0)
+        self.assertFalse(blocked.can_apply)
+        self.assertEqual(blocked.blockers[0].code, "missing_network")
+        with self.assertRaisesRegex(ValueError, "偏置"):
+            compute_twist_profile(3, bias=2.0)
 
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@ try:
     from MayaCraft.adapters.maya.rig_graph import MayaRigGraphService
     from MayaCraft.adapters.maya.rig_switching import MayaRigSwitchService
     from MayaCraft.adapters.maya.skeleton import MayaSkeletonScanner
+    from MayaCraft.adapters.maya.twist_sculpt import MayaTwistSculptService
     from MayaCraft.domain.rig_graph import bind_graph_to_skeleton, golden_biped_graph
 
     def load_graph(filename, graph_id):
@@ -48,6 +49,16 @@ try:
     assert space_receipt.verified and space_receipt.maximum_matrix_error < 1e-4
     assert switch.undo_space(graph, space_receipt)
 
+    graph, _switch = load_graph("mayacraft_twist_sculpt.ma", "demoTwistSculpt")
+    twist = MayaTwistSculptService()
+    angle = twist.probe_twist_angle(graph, "l_arm", 0)
+    assert abs(abs(angle) - 90.0) < 1e-4, angle
+    profile = twist.plan_profile(graph, "l_arm", 0, -0.65, 0.85, 0.9)
+    assert profile.can_apply, profile.blockers
+    twist_receipt = twist.apply_profile(graph, profile)
+    assert twist_receipt.verified and twist_receipt.maximum_weight_error < 1e-8
+    assert twist.undo_profile(graph, twist_receipt)
+
     cmds.file(str(package / "demo" / "scenes" / "mayacraft_skeleton_blocked.ma"), open=True, force=True)
     cmds.select("spine_JNT")
     incomplete = MayaSkeletonScanner().capture_selection()
@@ -59,6 +70,6 @@ try:
     else:
         raise AssertionError("残缺骨架不应进入黄金双足构建")
 
-    print("MAYACRAFT_DEMO_SCENES_OK", 4)
+    print("MAYACRAFT_DEMO_SCENES_OK", 5)
 finally:
     maya.standalone.uninitialize()

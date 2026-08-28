@@ -466,6 +466,30 @@ class MayaRigGraphService:
                 if stable_id and stable_id not in joint_ids:
                     joint_ids.append(stable_id)
             return tuple(item for item in (ik_control, pole_control) if item), tuple(joint_ids)
+        if behavior_type == "twist_distribution":
+            start = input_stable(f"{node}.matrixIn[1]")
+            end = input_stable(f"{node}.matrixIn[0]")
+            targets = []
+            for aux in MayaRigGraphService._behavior_aux_nodes(cmds, behavior_id):
+                if cmds.nodeType(aux) != "quatToEuler":
+                    continue
+                outputs = cmds.listConnections(
+                    f"{aux}.outputRotate", source=False, destination=True, plugs=True,
+                ) or []
+                for plug in outputs:
+                    stable_id = stable_from_plug(plug)
+                    if stable_id and stable_id not in targets:
+                        targets.append(stable_id)
+            targets.sort(key=lambda stable_id: next(
+                (
+                    MayaRigGraphService._get(cmds, aux, "mayacraftTwistIndex", 999)
+                    for aux in MayaRigGraphService._behavior_aux_nodes(cmds, behavior_id)
+                    if cmds.nodeType(aux) == "quatSlerp"
+                    and MayaRigGraphService._get(cmds, aux, "mayacraftTwistTarget", "") == stable_id
+                ),
+                999,
+            ))
+            return tuple(item for item in (start, end) if item), tuple(targets)
         return (), ()
 
     @staticmethod
@@ -481,6 +505,8 @@ class MayaRigGraphService:
             MayaRigGraphService._apply_rp_ik(cmds, graph_id, behavior, paths)
         elif behavior.behavior_type == "space_switch":
             MayaRigGraphService._apply_space_switch(cmds, graph_id, behavior, paths)
+        elif behavior.behavior_type == "twist_distribution":
+            MayaRigGraphService._apply_twist_distribution(cmds, graph_id, behavior, paths)
         else:
             raise ValueError(f"尚未实现的绑定行为：{behavior.behavior_type}")
 
@@ -601,6 +627,67 @@ class MayaRigGraphService:
                 0.0, 0.0, 0.0, 1.0,
             )
             cmds.setAttr(f"{mult_matrix}.matrixIn[{index}]", *identity, type="matrix")
+
+    @staticmethod
+    def _apply_twist_distribution(cmds, graph_id, behavior, paths):
+        try:
+            if not cmds.pluginInfo("quatNodes", query=True, loaded=True):
+                cmds.loadPlugin("quatNodes", quiet=True)
+        except Exception as exc:
+            raise RuntimeError("Maya 2025 内置 quatNodes 无法加载，Twist 网络未创建") from exc
+        start = paths[behavior.sources[0]]
+        end = paths[behavior.sources[1]]
+        targets = tuple(paths[item] for item in behavior.targets)
+        settings = dict(behavior.settings)
+        axis = tuple(float(value) for value in settings.get("aimAxis", "1,0,0").split(","))
+        weights = tuple(float(value) for value in settings.get("weights", "").split("|") if value)
+        if len(axis) != 3 or sum(value * value for value in axis) <= 1e-10:
+            raise ValueError(f"{behavior.stable_id} 的 Twist 局部轴无效")
+        if len(weights) != len(targets):
+            raise ValueError(f"{behavior.stable_id} 的 Twist 权重数量与关节数量不一致")
+        axis_length = math.sqrt(sum(value * value for value in axis))
+        axis = tuple(value / axis_length for value in axis)
+        safe_name = behavior.stable_id.replace(".", "_").replace(":", "_")
+        relative = cmds.createNode("multMatrix", name=safe_name + "_REL_MMX")
+        decompose = cmds.createNode("decomposeMatrix", name=safe_name + "_REL_DCM")
+        dot = cmds.createNode("vectorProduct", name=safe_name + "_TWIST_DOT")
+        project = cmds.createNode("multiplyDivide", name=safe_name + "_TWIST_PROJECT")
+        normalize = cmds.createNode("quatNormalize", name=safe_name + "_TWIST_NORM")
+        MayaRigGraphService._tag_behavior_marker(cmds, relative, graph_id, behavior)
+        for node in (decompose, dot, project, normalize):
+            MayaRigGraphService._tag_behavior_aux(cmds, node, behavior.stable_id)
+        cmds.connectAttr(f"{end}.worldMatrix[0]", f"{relative}.matrixIn[0]", force=True)
+        cmds.connectAttr(f"{start}.worldInverseMatrix[0]", f"{relative}.matrixIn[1]", force=True)
+        cmds.connectAttr(f"{relative}.matrixSum", f"{decompose}.inputMatrix", force=True)
+        cmds.setAttr(f"{dot}.operation", 1)
+        for source_axis, axis_value in zip("XYZ", axis):
+            cmds.connectAttr(
+                f"{decompose}.outputQuat{source_axis}", f"{dot}.input1{source_axis}", force=True,
+            )
+            cmds.setAttr(f"{dot}.input2{source_axis}", axis_value)
+            cmds.setAttr(f"{project}.input1{source_axis}", axis_value)
+            cmds.connectAttr(f"{dot}.outputX", f"{project}.input2{source_axis}", force=True)
+            cmds.connectAttr(
+                f"{project}.output{source_axis}", f"{normalize}.inputQuat{source_axis}", force=True,
+            )
+        cmds.connectAttr(f"{decompose}.outputQuatW", f"{normalize}.inputQuatW", force=True)
+        for index, (stable_id, target, weight) in enumerate(zip(behavior.targets, targets, weights)):
+            slerp = cmds.createNode("quatSlerp", name=f"{safe_name}_{index + 1:02d}_SLERP")
+            to_euler = cmds.createNode("quatToEuler", name=f"{safe_name}_{index + 1:02d}_QTE")
+            MayaRigGraphService._tag_behavior_aux(cmds, slerp, behavior.stable_id)
+            MayaRigGraphService._tag_behavior_aux(cmds, to_euler, behavior.stable_id)
+            cmds.addAttr(slerp, longName="mayacraftTwistIndex", attributeType="long", defaultValue=index)
+            cmds.addAttr(slerp, longName="mayacraftTwistTarget", dataType="string")
+            cmds.setAttr(f"{slerp}.mayacraftTwistTarget", stable_id, type="string")
+            cmds.setAttr(f"{slerp}.input1QuatW", 1.0)
+            cmds.setAttr(f"{slerp}.inputT", weight)
+            cmds.connectAttr(f"{normalize}.outputQuat", f"{slerp}.input2Quat", force=True)
+            cmds.connectAttr(f"{slerp}.outputQuat", f"{to_euler}.inputQuat", force=True)
+            for rotate_axis in "XYZ":
+                plug = f"{target}.rotate{rotate_axis}"
+                if cmds.getAttr(plug, lock=True) or not cmds.getAttr(plug, settable=True):
+                    raise RuntimeError(f"Twist 关节旋转通道不可写：{plug}")
+            cmds.connectAttr(f"{to_euler}.outputRotate", f"{target}.rotate", force=True)
 
     @staticmethod
     def _tag_behavior_marker(cmds, node, graph_id, behavior):

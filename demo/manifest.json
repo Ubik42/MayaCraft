@@ -22,6 +22,11 @@
       "purpose": "胸腔带动画，验证上一帧保护键和当前帧世界姿态补偿"
     },
     {
+      "file": "scenes/mayacraft_twist_sculpt.ma",
+      "category": "Hero 成功 / 算法与前后对比",
+      "purpose": "第 12 帧左前臂 90 度纯扭转，验证 swing–twist 分解、可调分布、实时关节和 Undo"
+    },
+    {
       "file": "scenes/mayacraft_skeleton_blocked.ma",
       "category": "边界 / 残缺输入",
       "purpose": "只有 root、pelvis、spine 的残缺骨架，验证语义扫描阻断"
