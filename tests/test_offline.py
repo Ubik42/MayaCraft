@@ -34,6 +34,14 @@ from MayaCraft.domain.rig_graph import (
     module_build_order,
     validate_rig_graph,
 )
+from MayaCraft.domain.rig_switching import (
+    RigTransformSample,
+    maximum_matrix_error,
+    maximum_position_error,
+    plan_fk_ik_match,
+    plan_space_switch,
+    transform_fingerprint,
+)
 from MayaCraft.domain.skeleton import JointObservation, SemanticJoint, SkeletonAnalysis, analyze_skeleton
 from MayaCraft.domain.skin_mirror import (
     InfluenceObservation, SkinVertexObservation, build_influence_mirror_map, plan_skin_mirror,
@@ -436,6 +444,87 @@ class PackageTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             compute_pole_vector_position((0, 0, 0), (0, 0, 0), (0, 0, 0))
 
+    @staticmethod
+    def _rig_sample(stable_id, position):
+        matrix = (
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            float(position[0]), float(position[1]), float(position[2]), 1.0,
+        )
+        return RigTransformSample(stable_id, matrix)
+
+    def test_fk_to_ik_match_plan_preserves_end_and_computes_pole(self) -> None:
+        results = (
+            self._rig_sample("arm.deform.0", (0, 0, 0)),
+            self._rig_sample("arm.deform.1", (1, 1, 0)),
+            self._rig_sample("arm.deform.2", (2, 0, 0)),
+        )
+        controls = tuple(
+            self._rig_sample(f"arm.fk.{index}", result.world_position)
+            for index, result in enumerate(results)
+        )
+        ik = self._rig_sample("arm.ik.ctrl", (2, 0, 0))
+        pole = self._rig_sample("arm.pole.ctrl", (1, 0, 2))
+        plan = plan_fk_ik_match("graph", "arm", "FK_TO_IK", 12.0, results, controls, ik, pole, 0.0)
+        self.assertTrue(plan.can_apply)
+        self.assertEqual(plan.direction_label, "FK 匹配到 IK")
+        self.assertEqual(plan.targets[0].stable_id, "arm.ik.ctrl")
+        self.assertEqual(plan.targets[0].world_matrix, results[-1].world_matrix)
+        self.assertGreater(plan.targets[1].world_position[1], 1.0)
+        self.assertEqual(plan.blend_after, 1.0)
+        self.assertEqual(
+            plan.observed_fingerprint,
+            transform_fingerprint(
+                results + controls + (ik, pole),
+                (("frame", 12.0), ("ikFk", 0.0), ("twist", 0.0)),
+            ),
+        )
+
+    def test_ik_to_fk_match_and_error_metrics_are_deterministic(self) -> None:
+        results = tuple(self._rig_sample(f"leg.deform.{index}", (index, index * 2, 0)) for index in range(3))
+        controls = tuple(self._rig_sample(f"leg.fk.{index}", (9, 9, 9)) for index in range(3))
+        plan = plan_fk_ik_match(
+            "graph", "leg", "IK_TO_FK", 24.0, results, controls,
+            self._rig_sample("leg.ik.ctrl", (2, 4, 0)),
+            self._rig_sample("leg.pole.ctrl", (1, 2, 3)),
+            1.0,
+        )
+        self.assertTrue(plan.can_apply)
+        self.assertEqual(tuple(item.world_matrix for item in plan.targets), tuple(item.world_matrix for item in results))
+        self.assertEqual(maximum_position_error(results, results), 0.0)
+        self.assertEqual(maximum_matrix_error(results[0].world_matrix, results[0].world_matrix), 0.0)
+        moved = (results[0], results[1], self._rig_sample("leg.deform.2", (2, 5, 0)))
+        self.assertEqual(maximum_position_error(results, moved), 1.0)
+
+    def test_match_and_space_plans_block_invalid_or_noop_intent(self) -> None:
+        collapsed = tuple(self._rig_sample(f"arm.deform.{index}", (0, 0, 0)) for index in range(3))
+        controls = tuple(self._rig_sample(f"arm.fk.{index}", (0, 0, 0)) for index in range(3))
+        match = plan_fk_ik_match(
+            "graph", "arm", "FK_TO_IK", 1.0, collapsed, controls,
+            self._rig_sample("arm.ik.ctrl", (0, 0, 0)),
+            self._rig_sample("arm.pole.ctrl", (0, 0, 0)),
+            0.0,
+        )
+        self.assertFalse(match.can_apply)
+        self.assertTrue(any(item.code == "degenerate_chain" for item in match.blockers))
+        space = plan_space_switch(
+            "graph", "arm", 16.0, "arm.ik.ctrl",
+            self._rig_sample("arm.ik.ctrl", (4, 5, 6)), 0, 1,
+            ("全局", "胸口"),
+        )
+        self.assertTrue(space.can_apply)
+        self.assertEqual(space.guard_frame, 15.0)
+        self.assertEqual(space.previous_label, "全局")
+        self.assertEqual(space.target_label, "胸口")
+        noop = plan_space_switch(
+            "graph", "arm", 16.0, "arm.ik.ctrl",
+            self._rig_sample("arm.ik.ctrl", (4, 5, 6)), 1, 1,
+            ("全局", "胸口"),
+        )
+        self.assertFalse(noop.can_apply)
+        self.assertEqual(noop.blockers[0].code, "same_space")
+
     def test_rig_graph_cycle_blocks_incremental_compile(self) -> None:
         first = RigModuleSpec("first", "test", "First", depends_on=("second",))
         second = RigModuleSpec("second", "test", "Second", depends_on=("first",))
@@ -491,13 +580,17 @@ class PackageTests(unittest.TestCase):
             JointObservation("|root|pelvis|spine|chest|neck", "neck_JNT", "|root|pelvis|spine|chest", (0, 20, 0)),
             JointObservation("|root|pelvis|spine|chest|neck|head", "head_JNT", "|root|pelvis|spine|chest|neck", (0, 23, 0)),
             JointObservation("|root|pelvis|spine|chest|L_arm", "L_upperArm_JNT", "|root|pelvis|spine|chest", (4, 17, 0)),
-            JointObservation("|root|pelvis|spine|chest|L_arm|L_hand", "L_hand_JNT", "|root|pelvis|spine|chest|L_arm", (11, 17, 0)),
+            JointObservation("|root|pelvis|spine|chest|L_arm|L_forearm", "L_forearm_JNT", "|root|pelvis|spine|chest|L_arm", (8, 17, 0)),
+            JointObservation("|root|pelvis|spine|chest|L_arm|L_forearm|L_hand", "L_hand_JNT", "|root|pelvis|spine|chest|L_arm|L_forearm", (11, 17, 0)),
             JointObservation("|root|pelvis|spine|chest|R_arm", "R_upperArm_JNT", "|root|pelvis|spine|chest", (-4, 17, 0)),
-            JointObservation("|root|pelvis|spine|chest|R_arm|R_hand", "R_hand_JNT", "|root|pelvis|spine|chest|R_arm", (-11, 17, 0)),
+            JointObservation("|root|pelvis|spine|chest|R_arm|R_forearm", "R_forearm_JNT", "|root|pelvis|spine|chest|R_arm", (-8, 17, 0)),
+            JointObservation("|root|pelvis|spine|chest|R_arm|R_forearm|R_hand", "R_hand_JNT", "|root|pelvis|spine|chest|R_arm|R_forearm", (-11, 17, 0)),
             JointObservation("|root|pelvis|L_thigh", "L_thigh_JNT", "|root|pelvis", (3, 9, 0)),
-            JointObservation("|root|pelvis|L_thigh|L_foot", "L_foot_JNT", "|root|pelvis|L_thigh", (3, 1, 1)),
+            JointObservation("|root|pelvis|L_thigh|L_calf", "L_calf_JNT", "|root|pelvis|L_thigh", (3, 5, 0)),
+            JointObservation("|root|pelvis|L_thigh|L_calf|L_foot", "L_foot_JNT", "|root|pelvis|L_thigh|L_calf", (3, 1, 1)),
             JointObservation("|root|pelvis|R_thigh", "R_thigh_JNT", "|root|pelvis", (-3, 9, 0)),
-            JointObservation("|root|pelvis|R_thigh|R_foot", "R_foot_JNT", "|root|pelvis|R_thigh", (-3, 1, 1)),
+            JointObservation("|root|pelvis|R_thigh|R_calf", "R_calf_JNT", "|root|pelvis|R_thigh", (-3, 5, 0)),
+            JointObservation("|root|pelvis|R_thigh|R_calf|R_foot", "R_foot_JNT", "|root|pelvis|R_thigh|R_calf", (-3, 1, 1)),
         )
         analysis = analyze_skeleton(joints)
         graph = bind_graph_to_skeleton(golden_biped_graph(), analysis)
@@ -505,6 +598,16 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(dict(hand.attributes)["semanticRole"], "left_hand")
         self.assertEqual(dict(hand.attributes)["worldPosition"], "11,17,0")
         self.assertIn("sourceJoint", dict(hand.attributes))
+
+    def test_golden_biped_binding_blocks_incomplete_semantics(self) -> None:
+        analysis = analyze_skeleton((
+            JointObservation("|root", "root_JNT", position=(0, 0, 0)),
+            JointObservation("|root|pelvis", "pelvis_JNT", "|root", (0, 10, 0)),
+            JointObservation("|root|pelvis|spine", "spine_JNT", "|root|pelvis", (0, 14, 0)),
+        ))
+        self.assertTrue(analysis.is_usable)
+        with self.assertRaisesRegex(ValueError, "缺少必要骨架语义"):
+            bind_graph_to_skeleton(golden_biped_graph(), analysis)
 
     def test_influence_mirror_map_prefers_names_and_preserves_center(self) -> None:
         result = build_influence_mirror_map((

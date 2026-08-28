@@ -378,7 +378,18 @@ class MayaRigGraphService:
 
         def input_stable(plug):
             values = cmds.listConnections(plug, source=True, destination=False, plugs=True) or []
-            return stable_from_plug(values[0]) if values else ""
+            if not values:
+                return ""
+            stable_id = stable_from_plug(values[0])
+            if stable_id:
+                return stable_id
+            source_node = values[0].split(".", 1)[0]
+            if cmds.nodeType(source_node) == "multMatrix":
+                for index in (1, 0):
+                    traced = input_stable(f"{source_node}.matrixIn[{index}]")
+                    if traced:
+                        return traced
+            return ""
 
         def output_targets(plug):
             values = cmds.listConnections(plug, source=False, destination=True, plugs=True) or []
@@ -399,9 +410,15 @@ class MayaRigGraphService:
                 input_stable(f"{node}.target[0].targetMatrix"),
                 input_stable(f"{node}.target[0].weight"),
             ) if item)
-            aux = next((item for item in MayaRigGraphService._behavior_aux_nodes(cmds, behavior_id)
-                        if cmds.nodeType(item) == "multMatrix"), "")
-            return sources, output_targets(f"{aux}.matrixSum") if aux else ()
+            targets = ()
+            for aux in MayaRigGraphService._behavior_aux_nodes(cmds, behavior_id):
+                if cmds.nodeType(aux) != "multMatrix":
+                    continue
+                found = output_targets(f"{aux}.matrixSum")
+                if found:
+                    targets = found
+                    break
+            return sources, targets
         if behavior_type == "space_switch":
             drivers = []
             indices = cmds.getAttr(f"{node}.input", multiIndices=True) or []
@@ -476,7 +493,7 @@ class MayaRigGraphService:
         MayaRigGraphService._tag_behavior_marker(cmds, node, graph_id, behavior)
         MayaRigGraphService._reset_driven_transform(cmds, target)
         cmds.connectAttr(f"{source}.worldMatrix[0]", f"{node}.matrixIn[0]", force=True)
-        cmds.connectAttr(f"{target}.parentInverseMatrix[0]", f"{node}.matrixIn[1]", force=True)
+        MayaRigGraphService._connect_explicit_parent_inverse(cmds, target, node, 1)
         cmds.connectAttr(f"{node}.matrixSum", f"{target}.offsetParentMatrix", force=True)
 
     @staticmethod
@@ -489,15 +506,30 @@ class MayaRigGraphService:
             raise RuntimeError(f"FK/IK 权重属性不存在：{control}.{weight_attribute}")
         safe_name = behavior.stable_id.replace(".", "_").replace(":", "_")
         blend = cmds.createNode("blendMatrix", name=safe_name + "_BLM")
+        correction = cmds.createNode("composeMatrix", name=safe_name + "_CORRECT_CMP")
+        corrected_ik = cmds.createNode("multMatrix", name=safe_name + "_CORRECT_MMX")
         local = cmds.createNode("multMatrix", name=safe_name + "_LOCAL_MMX")
         MayaRigGraphService._tag_behavior_marker(cmds, blend, graph_id, behavior)
+        MayaRigGraphService._tag_behavior_aux(cmds, correction, behavior.stable_id)
+        MayaRigGraphService._tag_behavior_aux(cmds, corrected_ik, behavior.stable_id)
         MayaRigGraphService._tag_behavior_aux(cmds, local, behavior.stable_id)
         MayaRigGraphService._reset_driven_transform(cmds, target)
+        try:
+            joint_index = int(behavior.stable_id.rsplit(".", 1)[-1])
+        except ValueError:
+            joint_index = 0
+        for axis in "XYZ":
+            attribute = f"matchCorr{joint_index}{axis}"
+            if not cmds.attributeQuery(attribute, node=control, exists=True):
+                cmds.addAttr(control, longName=attribute, attributeType="doubleAngle", keyable=True, hidden=True)
+            cmds.connectAttr(f"{control}.{attribute}", f"{correction}.inputRotate{axis}", force=True)
         cmds.connectAttr(f"{fk_joint}.worldMatrix[0]", f"{blend}.inputMatrix", force=True)
-        cmds.connectAttr(f"{ik_joint}.worldMatrix[0]", f"{blend}.target[0].targetMatrix", force=True)
+        cmds.connectAttr(f"{correction}.outputMatrix", f"{corrected_ik}.matrixIn[0]", force=True)
+        cmds.connectAttr(f"{ik_joint}.worldMatrix[0]", f"{corrected_ik}.matrixIn[1]", force=True)
+        cmds.connectAttr(f"{corrected_ik}.matrixSum", f"{blend}.target[0].targetMatrix", force=True)
         cmds.connectAttr(f"{control}.{weight_attribute}", f"{blend}.target[0].weight", force=True)
         cmds.connectAttr(f"{blend}.outputMatrix", f"{local}.matrixIn[0]", force=True)
-        cmds.connectAttr(f"{target}.parentInverseMatrix[0]", f"{local}.matrixIn[1]", force=True)
+        MayaRigGraphService._connect_explicit_parent_inverse(cmds, target, local, 1)
         cmds.connectAttr(f"{local}.matrixSum", f"{target}.offsetParentMatrix", force=True)
 
     @staticmethod
@@ -514,6 +546,8 @@ class MayaRigGraphService:
         constraint = cmds.poleVectorConstraint(
             pole_control, handle, name=safe_name + "_PVC",
         )[0]
+        if cmds.attributeQuery("twist", node=ik_control, exists=True):
+            cmds.connectAttr(f"{ik_control}.twist", f"{handle}.twist", force=True)
         cmds.setAttr(f"{handle}.visibility", False)
         MayaRigGraphService._tag_behavior_marker(cmds, handle, graph_id, behavior)
         MayaRigGraphService._tag_behavior_aux(cmds, effector, behavior.stable_id)
@@ -546,8 +580,27 @@ class MayaRigGraphService:
         cmds.connectAttr(f"{selector_control}.{selector_attribute}", f"{choice}.selector", force=True)
         MayaRigGraphService._reset_driven_transform(cmds, target)
         cmds.connectAttr(f"{choice}.output", f"{local}.matrixIn[0]", force=True)
-        cmds.connectAttr(f"{target}.parentInverseMatrix[0]", f"{local}.matrixIn[1]", force=True)
+        MayaRigGraphService._connect_explicit_parent_inverse(cmds, target, local, 1)
         cmds.connectAttr(f"{local}.matrixSum", f"{target}.offsetParentMatrix", force=True)
+
+    @staticmethod
+    def _connect_explicit_parent_inverse(cmds, target, mult_matrix, index):
+        """Avoid the driven node's parentInverseMatrix feedback in OPM graphs."""
+        parents = cmds.listRelatives(target, parent=True, fullPath=True) or []
+        if parents:
+            cmds.connectAttr(
+                f"{parents[0]}.worldInverseMatrix[0]",
+                f"{mult_matrix}.matrixIn[{index}]",
+                force=True,
+            )
+        else:
+            identity = (
+                1.0, 0.0, 0.0, 0.0,
+                0.0, 1.0, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
+            )
+            cmds.setAttr(f"{mult_matrix}.matrixIn[{index}]", *identity, type="matrix")
 
     @staticmethod
     def _tag_behavior_marker(cmds, node, graph_id, behavior):

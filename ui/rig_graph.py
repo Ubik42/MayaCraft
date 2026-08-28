@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 
 from MayaCraft.adapters.maya.rig_graph import MayaRigGraphService
+from MayaCraft.adapters.maya.rig_switching import MayaRigSwitchService
 from MayaCraft.adapters.maya.skeleton import MayaSkeletonScanner
 from MayaCraft.compat.qt import QtCore, QtGui, QtWidgets
 from MayaCraft.domain.rig_graph import bind_graph_to_skeleton, golden_biped_graph
@@ -30,6 +31,53 @@ MODULE_TYPE_LABELS = {
     "fk_chain": "真实 FK 链",
     "ikfk_limb": "FK ↔ IK 链",
 }
+
+
+class RigMatchGauge(QtWidgets.QWidget):
+    """Animated FK/IK continuity instrument driven by the real blend value."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._blend = 0.0
+        self._phase = 0.0
+        self.setFixedHeight(46)
+        self._timer = QtCore.QTimer(self)
+        self._timer.setInterval(32)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start()
+
+    def set_blend(self, value):
+        self._blend = max(0.0, min(1.0, float(value)))
+        self.update()
+
+    def _tick(self):
+        self._phase = (self._phase + 0.018) % 1.0
+        if self.isVisible():
+            self.update()
+
+    def paintEvent(self, _event):
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        rect = QtCore.QRectF(2, 9, self.width() - 4, 25)
+        painter.setPen(QtGui.QPen(QtGui.QColor("#30394E"), 1))
+        painter.setBrush(QtGui.QColor("#0A0E16"))
+        painter.drawRoundedRect(rect, 8, 8)
+        split = rect.left() + rect.width() * 0.5
+        painter.setPen(QtGui.QPen(QtGui.QColor(66, 232, 255, 120), 2))
+        painter.drawLine(rect.left() + 9, rect.center().y(), split - 8, rect.center().y())
+        painter.setPen(QtGui.QPen(QtGui.QColor(255, 92, 188, 120), 2))
+        painter.drawLine(split + 8, rect.center().y(), rect.right() - 9, rect.center().y())
+        x = rect.left() + 10 + (rect.width() - 20) * self._blend
+        glow = QtGui.QRadialGradient(QtCore.QPointF(x, rect.center().y()), 11 + math.sin(self._phase * math.tau) * 2)
+        glow.setColorAt(0.0, QtGui.QColor("#A7FF6A"))
+        glow.setColorAt(1.0, QtGui.QColor(167, 255, 106, 0))
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.setBrush(glow)
+        painter.drawEllipse(QtCore.QPointF(x, rect.center().y()), 12, 12)
+        painter.setPen(QtGui.QColor("#DCE5FA"))
+        painter.setFont(QtGui.QFont(UI_FONT_FAMILY, 7, QtGui.QFont.Bold))
+        painter.drawText(rect.adjusted(9, 0, -9, 0), QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft, f"FK {round((1.0 - self._blend) * 100):d}%")
+        painter.drawText(rect.adjusted(9, 0, -9, 0), QtCore.Qt.AlignVCenter | QtCore.Qt.AlignRight, f"IK {round(self._blend * 100):d}%")
 
 
 class RigGraphCanvas(QtWidgets.QWidget):
@@ -235,9 +283,15 @@ class RigGraphWorkspace(QtWidgets.QWidget):
         self.graph = golden_biped_graph()
         self.scanner = MayaSkeletonScanner()
         self.service = MayaRigGraphService()
+        self.switch_service = MayaRigSwitchService(self.service)
         self.skeleton = None
         self.plan = None
         self.receipt = None
+        self.active_limb = ""
+        self.pending_switch_plan = None
+        self.pending_switch_kind = ""
+        self.switch_receipt = None
+        self.switch_receipt_kind = ""
         self._build_ui()
         self.refresh_plan()
 
@@ -293,6 +347,68 @@ class RigGraphWorkspace(QtWidgets.QWidget):
         self.undo_button.clicked.connect(self.undo_build)
         self.undo_button.setEnabled(False)
         side.addWidget(self.undo_button)
+        self.match_panel = QtWidgets.QFrame()
+        self.match_panel.setObjectName("RigMatchCapsule")
+        match_layout = QtWidgets.QVBoxLayout(self.match_panel)
+        match_layout.setContentsMargins(11, 10, 11, 10)
+        match_layout.setSpacing(6)
+        match_header = QtWidgets.QHBoxLayout()
+        self.match_title = QtWidgets.QLabel("左臂 / 动画匹配舱")
+        self.match_title.setStyleSheet("color:#F4F7FF;font-size:10px;font-weight:900;")
+        self.match_frame = QtWidgets.QLabel("第 1 帧")
+        self.match_frame.setStyleSheet("color:#A7FF6A;font-size:8px;font-weight:800;")
+        match_header.addWidget(self.match_title, 1)
+        match_header.addWidget(self.match_frame)
+        match_layout.addLayout(match_header)
+        self.match_gauge = RigMatchGauge()
+        match_layout.addWidget(self.match_gauge)
+        direction_row = QtWidgets.QHBoxLayout()
+        direction_row.setSpacing(6)
+        self.fk_to_ik_button = QtWidgets.QPushButton("预览 FK → IK")
+        self.fk_to_ik_button.setObjectName("RigMatchFKToIK")
+        self.ik_to_fk_button = QtWidgets.QPushButton("预览 IK → FK")
+        self.ik_to_fk_button.setObjectName("RigMatchIKToFK")
+        self.fk_to_ik_button.clicked.connect(lambda: self.preview_match("FK_TO_IK"))
+        self.ik_to_fk_button.clicked.connect(lambda: self.preview_match("IK_TO_FK"))
+        direction_row.addWidget(self.fk_to_ik_button)
+        direction_row.addWidget(self.ik_to_fk_button)
+        match_layout.addLayout(direction_row)
+        space_row = QtWidgets.QHBoxLayout()
+        self.space_combo = QtWidgets.QComboBox()
+        self.space_combo.addItems(("全局空间", "胸腔空间"))
+        self.space_preview_button = QtWidgets.QPushButton("预览空间切换")
+        self.space_preview_button.clicked.connect(self.preview_space)
+        space_row.addWidget(self.space_combo, 1)
+        space_row.addWidget(self.space_preview_button)
+        match_layout.addLayout(space_row)
+        self.match_status = QtWidgets.QLabel("选择方向后生成零写入匹配计划。")
+        self.match_status.setWordWrap(True)
+        self.match_status.setMinimumHeight(30)
+        self.match_status.setStyleSheet("color:#8791A8;font-size:8px;")
+        match_layout.addWidget(self.match_status)
+        action_row = QtWidgets.QHBoxLayout()
+        self.match_apply_button = QtWidgets.QPushButton("应用并在当前帧设键")
+        self.match_apply_button.setObjectName("RigMatchApply")
+        self.match_apply_button.setEnabled(False)
+        self.match_apply_button.clicked.connect(self.apply_switch_plan)
+        self.match_undo_button = QtWidgets.QPushButton("撤销")
+        self.match_undo_button.setEnabled(False)
+        self.match_undo_button.clicked.connect(self.undo_switch)
+        action_row.addWidget(self.match_apply_button, 1)
+        action_row.addWidget(self.match_undo_button)
+        match_layout.addLayout(action_row)
+        self.match_panel.setStyleSheet(
+            "QFrame#RigMatchCapsule{background:#0C1420;border:1px solid #35566A;border-radius:10px;}"
+            "QPushButton#RigMatchFKToIK{color:#071015;background:#42E8FF;border:0;}"
+            "QPushButton#RigMatchFKToIK:disabled{color:#45626A;background:#17333A;}"
+            "QPushButton#RigMatchIKToFK{color:#160711;background:#FF5CBC;border:0;}"
+            "QPushButton#RigMatchIKToFK:disabled{color:#79516A;background:#33192C;}"
+            "QPushButton#RigMatchApply{color:#071008;background:#A7FF6A;border:0;font-weight:900;}"
+            "QPushButton#RigMatchApply:disabled{color:#5D6B58;background:#233323;}"
+            "QComboBox{min-height:30px;color:#DCE5FA;background:#111827;border:1px solid #354158;border-radius:7px;padding:0 8px;}"
+        )
+        self.match_panel.setVisible(False)
+        side.addWidget(self.match_panel)
         side.addStretch(1)
         self.detail = QtWidgets.QLabel("悬停模块以查看编译状态。")
         self.detail.setProperty("muted", True)
@@ -319,7 +435,16 @@ class RigGraphWorkspace(QtWidgets.QWidget):
             self.statusChanged.emit(str(exc))
             return
         if self.skeleton.is_usable:
-            self.graph = bind_graph_to_skeleton(golden_biped_graph(), self.skeleton)
+            try:
+                self.graph = bind_graph_to_skeleton(golden_biped_graph(), self.skeleton)
+            except ValueError as exc:
+                self.signal.setText("黄金双足模板已阻断\n" + str(exc))
+                self.statusChanged.emit(str(exc))
+                self.skeleton = None
+                self.graph = golden_biped_graph()
+                self.canvas.set_state(self.graph, None, None)
+                self.refresh_plan()
+                return
             self.signal.setText(f"骨架在线 / {len(self.skeleton.joints)} 个关节\n对称度 {self.skeleton.symmetry_score}%  ·  置信度 {self.skeleton.confidence:.0%}")
             self.statusChanged.emit(f"已从 {self.skeleton.root_path.rsplit('|', 1)[-1]} 识别 {len(self.skeleton.semantics)} 个语义关节")
         else:
@@ -363,6 +488,7 @@ class RigGraphWorkspace(QtWidgets.QWidget):
         else:
             self.apply_button.setText("构建真实 FK 并验证")
         self.canvas.set_state(self.graph, self.plan, self.skeleton)
+        self._refresh_match_panel()
         self.statusChanged.emit("绑定图零写入差异已刷新")
 
     def apply_plan(self):
@@ -409,7 +535,126 @@ class RigGraphWorkspace(QtWidgets.QWidget):
 
     def _activate_module(self, module_id):
         self._hover_module(module_id)
+        if module_id in {"l_arm", "r_arm", "l_leg", "r_leg"}:
+            self.active_limb = module_id
+            self._refresh_match_panel()
         self.statusChanged.emit(f"已聚焦绑定模块：{MODULE_LABELS.get(module_id, module_id)}")
 
+    def _refresh_match_panel(self):
+        ready = bool(self.plan and self.plan.is_noop)
+        if ready and not self.active_limb:
+            self.active_limb = "l_arm"
+        visible = ready and self.active_limb in {"l_arm", "r_arm", "l_leg", "r_leg"}
+        self.match_panel.setVisible(visible)
+        self.preview_button.setVisible(not ready)
+        self.apply_button.setVisible(not ready)
+        if not visible:
+            return
+        probe = self.switch_service.plan_match(self.graph, self.active_limb, "FK_TO_IK")
+        self.match_title.setText(f"{MODULE_LABELS.get(self.active_limb, self.active_limb)} / 动画匹配舱")
+        self.match_frame.setText(f"第 {probe.frame:g} 帧")
+        self.match_gauge.set_blend(probe.blend_before)
+        self.fk_to_ik_button.setEnabled(probe.blend_before < 0.999)
+        self.ik_to_fk_button.setEnabled(probe.blend_before > 0.001)
+        space_probe = self.switch_service.plan_space(self.graph, self.active_limb, 1, True)
+        self.space_combo.blockSignals(True)
+        self.space_combo.setCurrentIndex(max(0, min(1, space_probe.previous_space)))
+        self.space_combo.blockSignals(False)
 
-__all__ = ["RigGraphCanvas", "RigGraphWorkspace"]
+    def _show_switch_plan(self, plan, kind):
+        self.pending_switch_plan = plan
+        self.pending_switch_kind = kind
+        self.match_apply_button.setEnabled(plan.can_apply)
+        if plan.blockers:
+            self.match_status.setStyleSheet("color:#FF7B93;font-size:8px;")
+            self.match_status.setText("预检阻断 / " + " · ".join(item.message for item in plan.blockers[:2]))
+        elif kind == "match":
+            self.match_status.setStyleSheet("color:#42E8FF;font-size:8px;")
+            self.match_status.setText(
+                f"零写入预览 / {plan.direction_label}\n"
+                f"将匹配 {len(plan.targets)} 个控制目标，并在第 {plan.frame:g} 帧写入补偿键。"
+            )
+        else:
+            self.match_status.setStyleSheet("color:#9D6CFF;font-size:8px;")
+            guard = f"第 {plan.guard_frame:g} 帧保护键 + " if plan.guard_frame is not None else ""
+            self.match_status.setText(
+                f"零写入预览 / {plan.previous_label} → {plan.target_label}\n"
+                f"{guard}第 {plan.frame:g} 帧补偿世界姿态。"
+            )
+
+    def preview_match(self, direction):
+        if not self.active_limb:
+            return
+        try:
+            plan = self.switch_service.plan_match(self.graph, self.active_limb, direction)
+        except Exception as exc:
+            self.match_status.setText(f"预览失败 / {type(exc).__name__}: {exc}")
+            return
+        self._show_switch_plan(plan, "match")
+        self.statusChanged.emit("FK/IK 零写入匹配计划已生成")
+
+    def preview_space(self):
+        if not self.active_limb:
+            return
+        try:
+            plan = self.switch_service.plan_space(
+                self.graph, self.active_limb, self.space_combo.currentIndex(), True,
+            )
+        except Exception as exc:
+            self.match_status.setText(f"空间预览失败 / {type(exc).__name__}: {exc}")
+            return
+        self._show_switch_plan(plan, "space")
+        self.statusChanged.emit("Space Switch 零写入补偿计划已生成")
+
+    def apply_switch_plan(self):
+        if not self.pending_switch_plan or not self.pending_switch_plan.can_apply:
+            return
+        self.match_apply_button.setEnabled(False)
+        self.match_apply_button.setText("正在匹配并验证…")
+        QtWidgets.QApplication.processEvents()
+        try:
+            if self.pending_switch_kind == "match":
+                self.switch_receipt = self.switch_service.apply_match(self.graph, self.pending_switch_plan, key=True)
+            else:
+                self.switch_receipt = self.switch_service.apply_space(self.graph, self.pending_switch_plan, key=True)
+            self.switch_receipt_kind = self.pending_switch_kind
+        except Exception as exc:
+            self.match_status.setStyleSheet("color:#FF7B93;font-size:8px;")
+            self.match_status.setText(f"事务已回滚 / {type(exc).__name__}: {exc}")
+            self.match_apply_button.setText("重新预览后应用")
+            self.statusChanged.emit("动画匹配失败，场景已恢复")
+            self._refresh_match_panel()
+            return
+        self.match_status.setStyleSheet("color:#A7FF6A;font-size:8px;font-weight:800;")
+        self.match_status.setText(self.switch_receipt.message + "\n已设关键帧 / 可整块撤销")
+        self.match_apply_button.setText("验证通过")
+        self.match_undo_button.setEnabled(True)
+        self.pending_switch_plan = None
+        self.statusChanged.emit(self.switch_receipt.message)
+        self._refresh_match_panel()
+
+    def undo_switch(self):
+        if not self.switch_receipt:
+            return
+        try:
+            if self.switch_receipt_kind == "match":
+                restored = self.switch_service.undo_match(self.graph, self.switch_receipt)
+            else:
+                restored = self.switch_service.undo_space(self.graph, self.switch_receipt)
+        except Exception as exc:
+            restored = False
+            self.match_status.setText(f"撤销验证失败 / {type(exc).__name__}: {exc}")
+        if not restored:
+            self.statusChanged.emit("动画匹配撤销未能验证，请检查 Maya Undo 队列")
+            return
+        self.switch_receipt = None
+        self.switch_receipt_kind = ""
+        self.match_undo_button.setEnabled(False)
+        self.match_apply_button.setText("应用并在当前帧设键")
+        self.match_status.setStyleSheet("color:#A7FF6A;font-size:8px;")
+        self.match_status.setText("撤销验证通过 / 姿态、属性与新增关键帧均已恢复")
+        self.statusChanged.emit("无跳变动画操作已撤销并验证")
+        self._refresh_match_panel()
+
+
+__all__ = ["RigGraphCanvas", "RigGraphWorkspace", "RigMatchGauge"]

@@ -935,3 +935,30 @@ Rig Graph 不再把带 `FK/IK` 名字的空 transform 当成功。本批把“�
 
 这次收口的判断标准不是“按钮数量”，而是面试现场能够证明每个 Hero 路径使用真实 Maya 数据、
 具备中文动态反馈，并且写操作可以验证和撤销。
+
+### 2026-08-27 — R2 Slice 08：时间感知 FK/IK Match 与关键帧 Space 补偿
+
+本批把展示版中明确暂缓的动画师切换工作流重新作为 MayaCraft 2.1 单一 Hero 目标推进：
+
+- 新增 host-independent `rig_switching` 计划层。当前帧、三段结果意图、FK/IK/Pole 世界矩阵、Blend、
+  Twist 和 Space 属性进入 SHA-256 漂移指纹；零长度链、无效矩阵、同空间、锁定/驱动通道和未完成
+  Rig Graph 在写入前阻断；
+- FK→IK 由结果末端矩阵和三段几何计算 Pole；IK→FK 按父到子顺序匹配三个 FK 控制器。应用统一进入
+  单一命名 Undo chunk，并在切换 Blend 后逐关节重采样世界矩阵；
+- 真机弯曲 FK 测试暴露旧输出网络使用被驱动节点 `parentInverseMatrix` 的不稳定求值依赖。驱动、混合
+  与 Space 网络已统一改为显式父节点 `worldInverseMatrix`，旧 Rig Graph 事务回归继续通过；
+- Maya RP IK 在任意弯曲平面存在关节 Roll 差异。没有放宽误差阈值，而是在三段 IK 输入前加入
+  `composeMatrix + multMatrix` 旋转补偿，并把九个补偿角作为 IK 控制器隐藏可关键帧通道；FK→IK 后
+  最大位置误差 `2.184e-7`、最大矩阵误差 `2.077e-7`，IK→FK 位置误差 `5.044e-15`；
+- Space Switch 在当前帧前一帧写旧空间与旧局部通道保护键，当前帧切换 enum、恢复控制器世界矩阵并
+  写补偿键；实测世界矩阵误差为 `0`，Undo 验证空间、姿态和新增关键帧全部恢复；
+- Rig Graph Inspector 在构建验证后动态展开中文“动画匹配舱”：FK/IK 光轨由真实 Blend 驱动，覆盖
+  零写入预览、成功回执、锁定阻断、760×620 窄 Dock 和 Undo 五种截图状态；
+- `demo/` 新增四个 Maya 2025 确定性自生成场景、JSON 清单、生成脚本和自动场景验证；中文使用教程、
+  录屏脚本和素材说明已落盘。离线测试 64 项通过。
+
+本 Slice 已完成核心算法、真实 Maya 事务、中文 UI 和首批素材。随后完成发布硬化：2000 次宿主无关
+匹配/空间计划实测 `82.581 ms`，低于 `120 ms` 总预算；独立隐藏 Maya 2025 进程 PID `37156` 完成
+启动、重复打开清理、开发热重载与关闭清理，插件内启动 `199.362 ms`、关闭 `19.012 ms`，测试前后
+均无 Maya 残留进程；一键安装脚本支持零写入预览，并只向当前用户 Maya 2025 modules 目录写入经
+读回验证的 `MayaCraft.mod`。Twist/Bendy、Guide、Face PSD/RBF 和拓扑变化蒙皮迁移不扩入本 goal。

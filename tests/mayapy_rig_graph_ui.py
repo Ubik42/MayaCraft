@@ -93,6 +93,46 @@ try:
     pole_position = cmds.xform(pole, query=True, worldSpace=True, translation=True)
     assert abs(pole_position[2]) > 1.0, pole_position
     cmds.undo()
+
+    # Native animator workflow: zero-write preview -> keyed match -> verified UI -> Undo.
+    workspace.preview_match("FK_TO_IK")
+    app.processEvents()
+    assert workspace.pending_switch_plan and workspace.pending_switch_plan.can_apply
+    assert "零写入预览" in workspace.match_status.text()
+    match_preview = artifacts / "mayacraft_rig_match_preview_cn.png"
+    assert window.grab().save(str(match_preview))
+    workspace.apply_switch_plan()
+    app.processEvents()
+    assert workspace.switch_receipt and workspace.switch_receipt.verified
+    assert "验证通过" in workspace.match_status.text()
+    match_verified = artifacts / "mayacraft_rig_match_verified_cn.png"
+    assert window.grab().save(str(match_verified))
+    window.resize(760, 620)
+    app.processEvents()
+    assert workspace.match_panel.isVisible()
+    assert workspace.match_panel.geometry().bottom() <= workspace.height()
+    match_narrow = artifacts / "mayacraft_rig_match_narrow_cn.png"
+    assert window.grab().save(str(match_narrow))
+    window.resize(1120, 760)
+    app.processEvents()
+    workspace.undo_switch()
+    app.processEvents()
+    assert workspace.switch_receipt is None
+    assert "撤销验证通过" in workspace.match_status.text()
+    match_undo = artifacts / "mayacraft_rig_match_undo_cn.png"
+    assert window.grab().save(str(match_undo))
+    cmds.undoInfo(openChunk=True, chunkName="MayaCraft UI Locked Match Probe")
+    cmds.setAttr(ik_control + ".translateX", lock=True)
+    workspace.preview_match("FK_TO_IK")
+    app.processEvents()
+    assert not workspace.pending_switch_plan.can_apply
+    assert "预检阻断" in workspace.match_status.text()
+    match_blocked = artifacts / "mayacraft_rig_match_blocked_cn.png"
+    assert window.grab().save(str(match_blocked))
+    cmds.setAttr(ik_control + ".translateX", lock=False)
+    cmds.undoInfo(closeChunk=True)
+    cmds.undo()
+
     verified = artifacts / "mayacraft_rig_graph_verified.png"
     assert window.grab().save(str(verified))
     workspace.undo_build()
@@ -111,7 +151,10 @@ try:
         assert first.geometry().bottom() < second.geometry().top(), (first.geometry(), second.geometry())
     narrow = artifacts / "mayacraft_rig_graph_narrow.png"
     assert window.grab().save(str(narrow))
-    print("MAYACRAFT_RIG_GRAPH_UI_OK", preview, verified, narrow)
+    print(
+        "MAYACRAFT_RIG_GRAPH_UI_OK", preview, verified, narrow,
+        match_preview, match_verified, match_narrow, match_undo, match_blocked,
+    )
     window.shutdown()
     window.close()
     window.deleteLater()

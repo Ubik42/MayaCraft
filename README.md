@@ -14,8 +14,19 @@
 | ![形变 MRI](docs/images/deformation_mri.png) | ![重定向与接触 IK](docs/images/retarget_contact_ik.png) |
 
 展示范围：动态角色工作区、Deformation MRI、Motion Magnetism、Retarget/Clip/Contact IK，以及可增量
-构建的真实 FK/RP IK/Pole/基础 Space Switch。完整 FK/IK 无跳变匹配、带关键帧补偿的空间切换、
-Twist/Bendy/Guide 编辑、Face PSD/RBF 与拓扑变化蒙皮迁移已明确列入后续，不以半成品进入本次展示。
+构建的真实 FK/RP IK/Pole。MayaCraft 2.1 已完成时间感知的 FK/IK 无跳变匹配和带保护关键帧的
+Space Switch；Twist/Bendy/Guide 编辑、Face PSD/RBF 与拓扑变化蒙皮迁移仍明确列入后续。
+
+| FK → IK 零写入预览 | 应用、读回验证与关键帧 |
+| --- | --- |
+| ![FK 到 IK 零写入计划](docs/images/rig_match_preview.png) | ![FK 到 IK 验证通过](docs/images/rig_match_verified.png) |
+| 760×620 窄 Dock | 整块 Undo 验证 |
+| ![绑定匹配窄尺寸](docs/images/rig_match_narrow.png) | ![动画匹配撤销](docs/images/rig_match_undo.png) |
+
+![锁定控制通道的预检阻断](docs/images/rig_match_blocked.png)
+
+以上绑定匹配高清图由 Maya 2025 自带的同版本 `mayapy + PySide6` 直接渲染生产 Widget；不是另画的设计稿。
+真实 Maya `workspaceControl` 的启动、重复打开、热重载和关闭清理另由隐藏 GUI 测试验证。
 
 MayaCraft 面向国内企业展示与中文制作团队，主界面默认使用简体中文；Maya、FK/IK、RBF、Pose、
 skinCluster 等必要行业术语按语境保留。原生 Qt 启动时会显式注册 CJK 字体，确保 Maya 2025 与
@@ -146,7 +157,10 @@ forward/up 坐标约定、metadata 与 SHA-256 指纹；写入采用原子替换
 事务增量构建并全图读回验证。黄金双足目前覆盖 7 个模块、73 个声明对象和 34 条物理行为；脊柱、
 头部与四肢生成真实 NURBS 控制曲线、独立 FK/IK/result joint 链、RP IK + Pole、
 `blendMatrix` FK/IK 混合与 `multMatrix → offsetParentMatrix` 驱动；手脚 IK 控制器提供基础全局/胸腔
-Space Switch，并保持初始世界位置不跳变。完整的动画帧补偿式切换仍属于后续路线。
+Space Switch。新的动画匹配舱会在当前帧生成零写入计划：FK→IK 同时匹配末端、Pole、RP IK Roll
+补偿和 `ikFk`；IK→FK 按父子顺序匹配三段 FK 控制器。应用时写入关键帧、重新读取三段结果关节并
+计算世界位置/矩阵误差，失败自动回滚。Space Switch 会在上一帧写入旧空间保护键，在当前帧切换
+空间并反算控制器局部通道，使世界姿态保持；Undo 会验证属性、姿态和新增关键帧全部恢复。
 控制器会绑定到识别出的 spine/head/arm/hand/leg/foot 世界位置与朝向。输入骨架保持只读；连接断开、
 源关节改名、结构漂移和引用节点变更均在应用前阻断或进入精确差异。旧 Rigging 页仍作为迁移期功能
 入口，不再被视为可信构建内核。
@@ -197,7 +211,24 @@ MRI 可视层直接读取 MFnMesh 世界坐标和三角拓扑，通过 host-inde
 - Maya 自带 Python 3.11、PySide6 与 shiboken6；
 - Face 标签页额外依赖 PyMEL；未安装时仅该页显示依赖诊断，不影响其余标签页；
 
-### 放置仓库
+### 一键安装（推荐）
+
+在 PowerShell 中先做零写入预览：
+
+```powershell
+.\install\install_maya2025.ps1 -Preview
+```
+
+确认路径后执行安装：
+
+```powershell
+.\install\install_maya2025.ps1
+```
+
+脚本只会在当前用户的 `Documents\maya\2025\modules` 写入一个 `MayaCraft.mod`，随后立即读回验证；
+不会复制仓库、修改 Maya 安装目录或启动 Maya。移动仓库后重新运行脚本即可更新路径。
+
+### 手动放置仓库
 
 将仓库父目录加入 Maya 的 Python 搜索路径。假设目录为：
 
@@ -219,6 +250,20 @@ launch.run(development=True)
 ```
 
 每个旧模块独立加载。某个可选依赖或功能模块失败时，故障页会显示完整诊断，Character Workspace 和其余模块仍可使用。
+
+## 演示素材与最短成功路径
+
+仓库内置四套由 Maya 2025 确定性脚本自行合成的场景，不包含授权不明的第三方角色资产：
+
+- 标准弯曲手臂 FK→IK 成功场景；
+- IK 控制器通道锁定的预检阻断场景；
+- 胸腔带动画的关键帧 Space Switch 场景；
+- 缺少胸腔、头部和四肢语义的残缺骨架场景。
+
+从 `demo/scenes/mayacraft_match_success.ma` 开始，在第 12 帧打开左侧“绑”工作区，点击
+“预览 FK → IK”再点击“应用并在当前帧设键”，即可完成最短演示。素材说明见
+[`demo/README.md`](demo/README.md)，完整操作见 [`docs/使用教程.md`](docs/使用教程.md)，录屏顺序见
+[`docs/演示录制脚本.md`](docs/演示录制脚本.md)。
 
 ## 工程结构
 
@@ -243,8 +288,8 @@ docs/DEVELOPMENT_PLAN.md  产品边界、研究议程与分阶段开发计划
 ## 展示版边界
 
 - 只支持 Maya 2025 / Python 3.11 / PySide6 6.5.3；
-- Rig Graph 已覆盖真实 FK、RP IK、Pole、FK/IK 混合和基础 Space Switch，但未开放带关键帧补偿的
-  FK/IK Match 与动画中无跳变 Space 切换；
+- Rig Graph 已覆盖真实 FK、RP IK、Pole、FK/IK 混合、带关键帧的无跳变 FK/IK Match 和
+  全局/胸腔 Space 补偿；当前只对 MayaCraft 黄金双足生成的三段肢体开放；
 - Twist/Bendy/Guide 高级编辑、Face PSD/RBF 重写、拓扑变化蒙皮迁移暂不进入本版；
 - Face 仍是历史 PyMEL 实现，已与主界面隔离，但完整去除 PyMEL 需要后续专项重写；
 - 自动绑定依赖骨骼命名、标签和场景结构，投入实际制作前应在副本场景验证；

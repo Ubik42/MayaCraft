@@ -1,0 +1,30 @@
+{
+  "schema": "mayacraft.demo.manifest/v1",
+  "generatedWith": "Autodesk Maya 2025",
+  "randomSeed": null,
+  "source": "MayaCraft 项目确定性脚本自行合成，不包含第三方模型、贴图或商业资产",
+  "generator": "demo/generate/generate_rig_switching_scenes.py",
+  "license": "仅包含几何骨架、控制器和动画测试数据；随 MayaCraft 项目一同分发",
+  "scenes": [
+    {
+      "file": "scenes/mayacraft_match_success.ma",
+      "category": "标准成功 / 前后对比",
+      "purpose": "第 12 帧弯曲左臂 FK 姿态，验证 FK→IK 无跳变匹配、关键帧和 Undo"
+    },
+    {
+      "file": "scenes/mayacraft_match_locked.ma",
+      "category": "常见错误 / 预检阻断",
+      "purpose": "IK 控制器 translateX 锁定，验证写入前阻断且场景零修改"
+    },
+    {
+      "file": "scenes/mayacraft_space_switch.ma",
+      "category": "复杂动画 / 前后对比",
+      "purpose": "胸腔带动画，验证上一帧保护键和当前帧世界姿态补偿"
+    },
+    {
+      "file": "scenes/mayacraft_skeleton_blocked.ma",
+      "category": "边界 / 残缺输入",
+      "purpose": "只有 root、pelvis、spine 的残缺骨架，验证语义扫描阻断"
+    }
+  ]
+}

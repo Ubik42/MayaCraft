@@ -486,7 +486,13 @@ def golden_biped_graph(graph_id="mayaCraftBiped") -> RigGraphSpec:
             RigNodeSpec(f"{module_id}.ik.space", f"{side}_{label}_IK_SPACE", "transform", module_id, "control", f"{module_id}.module"),
             RigNodeSpec(
                 f"{module_id}.ik.ctrl", f"{side}_{parts[-1]}_IK_CTRL", "transform", module_id, "control", f"{module_id}.ik.space",
-                (("controlShape", "circle"), ("customEnum:space", "全局:胸口|0"), ("customFloat:ikFk", "0|0|1"), ("semanticRole", end_role)),
+                (
+                    ("controlShape", "circle"),
+                    ("customEnum:space", "全局:胸口|0"),
+                    ("customFloat:ikFk", "0|0|1"),
+                    ("customFloat:twist", "0|-180|180"),
+                    ("semanticRole", end_role),
+                ),
             ),
             RigNodeSpec(
                 f"{module_id}.pole.ctrl", f"{side}_{label}_POLE_CTRL", "transform", module_id, "control", f"{module_id}.module",
@@ -544,6 +550,14 @@ def bind_graph_to_skeleton(graph: RigGraphSpec, analysis) -> RigGraphSpec:
         raise ValueError("A usable semantic skeleton analysis is required")
     observations = {item.path: item for item in analysis.joints}
     semantic_by_role = {item.role: item for item in analysis.semantics}
+    required_roles = sorted({
+        dict(node.attributes).get("semanticRole", "")
+        for node in graph.nodes
+        if dict(node.attributes).get("semanticRole", "")
+    })
+    missing_roles = tuple(role for role in required_roles if role not in semantic_by_role)
+    if missing_roles:
+        raise ValueError("黄金双足模板缺少必要骨架语义：" + "、".join(missing_roles))
     modules = []
     for module in graph.modules:
         nodes = []

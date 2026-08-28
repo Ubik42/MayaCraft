@@ -29,6 +29,9 @@ from MayaCraft.domain.rig_graph import (
     ObservedRigBehavior, ObservedRigNode, RigBehaviorSpec, RigGraphSpec,
     RigModuleSpec, RigNodeSpec, compile_incremental_rig,
 )
+from MayaCraft.domain.rig_switching import (
+    RigTransformSample, plan_fk_ik_match, plan_space_switch,
+)
 
 
 nodes = tuple(
@@ -258,6 +261,38 @@ rig_noop_plan = compile_incremental_rig(
 )
 rig_graph_ms = (perf_counter() - started) * 1000.0
 
+def switch_matrix(x, y, z):
+    return (
+        1.0, 0.0, 0.0, 0.0,
+        0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        float(x), float(y), float(z), 1.0,
+    )
+
+switch_results = (
+    RigTransformSample("result.0", switch_matrix(0.0, 10.0, 0.0)),
+    RigTransformSample("result.1", switch_matrix(4.0, 8.0, 1.0)),
+    RigTransformSample("result.2", switch_matrix(8.0, 5.0, 0.0)),
+)
+switch_fk = tuple(
+    RigTransformSample(f"fk.{index}", sample.world_matrix)
+    for index, sample in enumerate(switch_results)
+)
+switch_ik = RigTransformSample("ik", switch_matrix(8.0, 5.0, 0.0))
+switch_pole = RigTransformSample("pole", switch_matrix(4.0, 8.0, 5.0))
+switch_iterations = 1000
+started = perf_counter()
+for index in range(switch_iterations):
+    match_plan = plan_fk_ik_match(
+        "benchmark", "arm.L", "FK_TO_IK", float(index), switch_results,
+        switch_fk, switch_ik, switch_pole, 0.0,
+    )
+    space_plan = plan_space_switch(
+        "benchmark", "arm.L", float(index), "ik.space", switch_ik,
+        0, 1, ("全局", "胸腔"),
+    )
+rig_switch_ms = (perf_counter() - started) * 1000.0
+
 result = {
     "canvas_nodes": len(nodes),
     "canvas_project_and_hit_mean_ms": round(canvas_ms, 4),
@@ -311,6 +346,14 @@ result = {
         and rig_create_plan.can_apply
         and rig_noop_plan.is_noop
     ),
+    "rig_switch_plan_iterations": switch_iterations * 2,
+    "rig_switch_plan_ms": round(rig_switch_ms, 3),
+    "rig_switch_plan_budget_ms": 120.0,
+    "rig_switch_plan_passed": (
+        rig_switch_ms <= 120.0
+        and match_plan.can_apply
+        and space_plan.can_apply
+    ),
 }
 output = Path(__file__).with_name("artifacts") / "domain_benchmark.json"
 output.parent.mkdir(exist_ok=True)
@@ -328,3 +371,5 @@ if not result["clip_library_passed"]:
     raise SystemExit("Clip library scan/filter budget exceeded")
 if not result["rig_graph_passed"]:
     raise SystemExit("Rig Graph compile budget exceeded")
+if not result["rig_switch_plan_passed"]:
+    raise SystemExit("Rig switching plan budget exceeded")

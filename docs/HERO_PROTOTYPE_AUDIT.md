@@ -16,6 +16,8 @@
 | GUI 生命周期 | Maya 2025 隐藏 GUI 中 initial/repeat/hot-reload/close 四步通过；旧 callback 归零 | 通过 |
 | 后台不扰民 | GUI 验证只操作自己启动的隐藏 PID，超时也只停止该 PID；未连接或关闭用户已有 Maya | 通过 |
 | Rig Graph 物理行为 | 73 个声明对象、34 条行为；FK/RP IK/Pole/混合/基础 Space 均为真实 DG，断线可检测/修复/撤销 | 通过 |
+| 动画师无跳变事务 | FK→IK / IK→FK、RP IK Roll 关键帧补偿、上一帧 Space 保护键、漂移检查、读回误差与 Undo | 通过 |
+| 可复现演示素材 | 4 个 Maya ASCII 自生成场景覆盖成功、锁定阻断、复杂 Space 动画和残缺骨架 | 通过 |
 
 ## 权威产物
 
@@ -30,6 +32,11 @@
 - `tests/artifacts/mayacraft_clip_library_cn.png`：Clip v2 资产索引、搜索、预检与损坏资产状态。
 - `tests/artifacts/mayacraft_rig_graph_verified.png`：真实 FK/IK 控制链、34 条物理行为在线与 107 项构建完成态。
 - `tests/artifacts/mayacraft_rig_graph_narrow.png`：760×620 原生窄 Dock 折叠与无重叠证据。
+- `tests/artifacts/mayacraft_rig_match_preview_cn.png`：当前帧 FK→IK 零写入计划；
+- `tests/artifacts/mayacraft_rig_match_verified_cn.png`：关键帧写入与逐关节读回验证；
+- `tests/artifacts/mayacraft_rig_match_narrow_cn.png`：760×620 动画匹配舱；
+- `tests/artifacts/mayacraft_rig_match_blocked_cn.png`：锁定通道在写前阻断；
+- `tests/artifacts/mayacraft_rig_match_undo_cn.png`：姿态、属性和新增关键帧 Undo 恢复。
 
 ## 验证命令
 
@@ -55,6 +62,6 @@ $env:QT_QPA_PLATFORM = 'offscreen'
 5. Retarget 已完成 Pose/Clip、资产导入导出、语义 Ghost、基础 Animation Layer、双脚 Contact IK
    Layer、根朝向/地面法线、Smoothstep 接触权重包络、舞台锚点拖拽、跨骨架轴模板、Clip v2 与
    批量资产浏览预检；后续补更完整 Full Body 控制与外部格式桥接；
-6. Rig Graph 已从占位 transform 推进到真实 FK/RP IK/Pole、FK/IK 混合、基础全局/胸腔 Space 与可验证
-   DG 行为；无跳变 FK/IK Match、动画帧 Space 补偿、Twist/Bendy 与 Guide 编辑进入后续路线；
+6. Rig Graph 已从占位 transform 推进到真实 FK/RP IK/Pole、FK/IK 混合、关键帧无跳变 FK/IK Match、
+   全局/胸腔 Space 补偿与可验证 DG 行为；Twist/Bendy 与 Guide 编辑进入后续路线；
 7. 本次展示不再扩张 Face PSD/RBF、拓扑变化蒙皮迁移和完整 Full Body 控制，避免把未闭环流程伪装成成品。

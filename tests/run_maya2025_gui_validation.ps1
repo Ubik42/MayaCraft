@@ -16,6 +16,8 @@ if (-not (Test-Path -LiteralPath $MayaExe -PathType Leaf)) {
 New-Item -ItemType Directory -Path $artifactRoot -Force | Out-Null
 Remove-Item -LiteralPath $reportPath, $logPath -Force -ErrorAction SilentlyContinue
 
+$preExistingMayaPids = @(Get-Process -Name "maya" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
+$lifecycleStarted = Get-Date
 $env:MAYACRAFT_VALIDATION_ROOT = $repoRoot
 $process = Start-Process -FilePath $MayaExe `
     -ArgumentList @("-hideConsole", "-noAutoloadPlugins", "-script", $scriptPath, "-log", $logPath) `
@@ -35,9 +37,19 @@ if (-not (Test-Path -LiteralPath $reportPath)) {
 }
 
 $report = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json
+if ([int]$report.process_id -ne $process.Id) {
+    throw "Maya lifecycle PID mismatch: spawned $($process.Id), reported $($report.process_id)"
+}
 if (-not $report.passed) {
     throw "Maya 2025 GUI validation failed: $($report.error)"
 }
 
 $process.WaitForExit(10000) | Out-Null
+$postExistingMayaPids = @(Get-Process -Name "maya" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
+$report | Add-Member -NotePropertyName "launcher_process_id" -NotePropertyValue $process.Id -Force
+$report | Add-Member -NotePropertyName "pre_existing_maya_pids" -NotePropertyValue $preExistingMayaPids -Force
+$report | Add-Member -NotePropertyName "remaining_maya_pids" -NotePropertyValue $postExistingMayaPids -Force
+$report | Add-Member -NotePropertyName "launcher_lifecycle_ms" -NotePropertyValue ([math]::Round(((Get-Date) - $lifecycleStarted).TotalMilliseconds, 3)) -Force
+$report | Add-Member -NotePropertyName "spawned_process_exited" -NotePropertyValue $process.HasExited -Force
+$report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $reportPath -Encoding UTF8
 $report | ConvertTo-Json -Depth 8

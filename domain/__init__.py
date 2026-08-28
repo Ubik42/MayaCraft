@@ -94,6 +94,12 @@ from MayaCraft.domain.clip_library import (
     ClipLibraryEntry, ClipPackagePreflight, build_clip_library_entry,
     filter_clip_library_entries, preflight_clip_package,
 )
+from MayaCraft.domain.rig_switching import (
+    FKIKMatchPlan, FKIKMatchReceipt, RigMatchTarget, RigSwitchIssue,
+    RigTransformSample, SpaceSwitchPlan, SpaceSwitchReceipt,
+    maximum_matrix_error, maximum_position_error, plan_fk_ik_match,
+    plan_space_switch, transform_fingerprint,
+)
 
 __all__ = [
     "AttributeChange",
@@ -229,4 +235,16 @@ __all__ = [
     "build_clip_library_entry",
     "filter_clip_library_entries",
     "preflight_clip_package",
+    "FKIKMatchPlan",
+    "FKIKMatchReceipt",
+    "RigMatchTarget",
+    "RigSwitchIssue",
+    "RigTransformSample",
+    "SpaceSwitchPlan",
+    "SpaceSwitchReceipt",
+    "maximum_matrix_error",
+    "maximum_position_error",
+    "plan_fk_ik_match",
+    "plan_space_switch",
+    "transform_fingerprint",
 ]
