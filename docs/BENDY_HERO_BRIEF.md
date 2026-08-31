@@ -3,6 +3,11 @@
 状态：开发契约 0.1  
 目标宿主：Maya 2025
 
+![形变弧场交互预览](images/bendy_arc_field_preview.png)
+
+上图由 Maya 2025 自带 mayapy / PySide6 直接渲染生产 `BendyArcField`，展示当前零写入交互切片；
+不是最终 Maya DG 应用完成态。
+
 ## 一句话演示
 
 选择一条已经由 MayaCraft 构建的手臂或腿，拖动弧心塑造轮廓，调整两端切线与体积保持；MayaCraft 先用动态形变带展示结果，确认后才创建或更新真实 Bendy DG，并证明 Twist 仍沿新的弧线正确分布。
@@ -47,5 +52,4 @@
 
 ## 首个切片
 
-先只完成宿主无关的弧长采样、稳定局部帧、体积曲线和 QPainter 可交互形变带，不碰 Maya 写入。验收为：直线、C 弧、S 弧和接近零曲率都不翻转；拖动反馈连续；目标 Dock 与窄 Dock 不溢出。第二个切片再接 Rig Graph 声明与 Maya 事务。
-
+宿主无关的弧长采样、稳定局部帧、体积曲线和 QPainter 可交互形变带已经完成。直线、C 弧、S 弧和接近零曲率均不翻转；两个切线把手与肌腹把手可直接拖动，目标 Dock 与 330px 窄场均已通过 mayapy 渲染复核。下一切片接 Rig Graph 声明与 Maya 事务。

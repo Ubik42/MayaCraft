@@ -9,6 +9,7 @@ from MayaCraft.adapters.maya.rig_switching import MayaRigSwitchService
 from MayaCraft.adapters.maya.twist_sculpt import MayaTwistSculptService
 from MayaCraft.adapters.maya.skeleton import MayaSkeletonScanner
 from MayaCraft.compat.qt import QtCore, QtGui, QtWidgets
+from MayaCraft.domain.bendy_deformation import sample_bendy_arc
 from MayaCraft.domain.rig_graph import bind_graph_to_skeleton, golden_biped_graph
 from MayaCraft.domain.twist_sculpt import compute_twist_profile
 from MayaCraft.ui.theme import ensure_ui_font
@@ -158,6 +159,252 @@ class TwistEnergyField(QtWidgets.QWidget):
         painter.drawText(rect.adjusted(10, 6, -10, 0), QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft, "SWING–TWIST / 四元数能量场")
         painter.setPen(QtGui.QColor("#FFB15C"))
         painter.drawText(rect.adjusted(10, 6, -10, 0), QtCore.Qt.AlignTop | QtCore.Qt.AlignRight, f"{self._angle:+.1f}°")
+
+
+class BendyArcField(QtWidgets.QWidget):
+    """Direct-manipulation silhouette ribbon backed by the Bendy arc solver."""
+
+    intentChanged = QtCore.Signal(float, float, float, float)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._handles = [[0.31, -0.28], [0.69, -0.28]]
+        self._volume = 0.65
+        self._active_handle = -1
+        self._hovered_handle = -1
+        self._handle_points = []
+        self._phase = 0.0
+        self._last_arc = None
+        self.setMouseTracking(True)
+        self.setFocusPolicy(QtCore.Qt.StrongFocus)
+        self.setAccessibleName("可拖拽 Bendy 形变弧场")
+        self.setMinimumHeight(220)
+        self._timer = QtCore.QTimer(self)
+        self._timer.setInterval(40)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start()
+
+    @staticmethod
+    def _pos(event):
+        return event.position() if hasattr(event, "position") else event.localPos()
+
+    def _tick(self):
+        self._phase = (self._phase + 0.012) % 1.0
+        if self.isVisible():
+            self.update()
+
+    def set_volume_preservation(self, value):
+        self._volume = max(0.0, min(1.0, float(value)))
+        self._emit_intent()
+
+    def set_intent(self, start_x=0.31, start_y=-0.28, end_x=0.69, end_y=-0.28):
+        self._handles = [
+            [max(0.12, min(0.48, float(start_x))), max(-0.72, min(0.72, float(start_y)))],
+            [max(0.52, min(0.88, float(end_x))), max(-0.72, min(0.72, float(end_y)))],
+        ]
+        self._emit_intent()
+
+    def set_preset(self, preset):
+        if preset == "S":
+            self.set_intent(0.31, -0.44, 0.69, 0.44)
+        elif preset == "STRAIGHT":
+            self.set_intent(0.31, 0.0, 0.69, 0.0)
+        else:
+            self.set_intent(0.31, -0.34, 0.69, -0.34)
+
+    def control_points(self):
+        return (
+            (0.0, 0.0, 0.0),
+            (self._handles[0][0] * 10.0, -self._handles[0][1] * 5.0, 0.0),
+            (self._handles[1][0] * 10.0, -self._handles[1][1] * 5.0, 0.0),
+            (10.0, 0.0, 0.0),
+        )
+
+    def arc(self):
+        self._last_arc = sample_bendy_arc(
+            self.control_points(), sample_count=11,
+            up_hint=(0.0, 1.0, 0.0), volume_preservation=self._volume,
+        )
+        return self._last_arc
+
+    def _emit_intent(self):
+        self.arc()
+        self.intentChanged.emit(
+            self._handles[0][0], self._handles[0][1],
+            self._handles[1][0], self._handles[1][1],
+        )
+        self.update()
+
+    def _field_rect(self):
+        return QtCore.QRectF(24.0, 42.0, max(80.0, self.width() - 48.0), max(90.0, self.height() - 72.0))
+
+    def _model_to_view(self, point, field):
+        return QtCore.QPointF(
+            field.left() + field.width() * (point[0] / 10.0),
+            field.center().y() - point[1] * field.height() / 5.4,
+        )
+
+    def _update_handle_points(self, field):
+        self._handle_points = [QtCore.QPointF(
+            field.left() + item[0] * field.width(),
+            field.center().y() + item[1] * field.height() * 0.72,
+        ) for item in self._handles]
+        midpoint = self._model_to_view(self.arc().samples[5].position, field)
+        self._handle_points.append(midpoint)
+
+    def _hit_handle(self, point):
+        return next((index for index, handle in enumerate(self._handle_points)
+                     if QtCore.QLineF(point, handle).length() <= 16.0), -1)
+
+    def mouseMoveEvent(self, event):
+        point = self._pos(event)
+        if self._active_handle >= 0:
+            field = self._field_rect()
+            normalized_x = (point.x() - field.left()) / max(1.0, field.width())
+            normalized_y = (point.y() - field.center().y()) / max(1.0, field.height() * 0.72)
+            if self._active_handle < 2:
+                lower, upper = ((0.12, 0.48) if self._active_handle == 0 else (0.52, 0.88))
+                self._handles[self._active_handle][0] = max(lower, min(upper, normalized_x))
+                self._handles[self._active_handle][1] = max(-0.72, min(0.72, normalized_y))
+            else:
+                current_mid = (self._handles[0][1] + self._handles[1][1]) * 0.5
+                target_mid = max(-0.72, min(0.72, normalized_y))
+                delta = target_mid - current_mid
+                self._handles[0][1] = max(-0.72, min(0.72, self._handles[0][1] + delta))
+                self._handles[1][1] = max(-0.72, min(0.72, self._handles[1][1] + delta))
+            self._emit_intent()
+            return
+        hovered = self._hit_handle(point)
+        if hovered != self._hovered_handle:
+            self._hovered_handle = hovered
+            self.setCursor(QtCore.Qt.SizeAllCursor if hovered >= 0 else QtCore.Qt.ArrowCursor)
+            self.update()
+        super().mouseMoveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton:
+            self._active_handle = self._hit_handle(self._pos(event))
+            if self._active_handle >= 0:
+                self.setFocus(QtCore.Qt.MouseFocusReason)
+                self.update()
+                return
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self._active_handle >= 0:
+            self._active_handle = -1
+            self.update()
+            return
+        super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event):
+        if self._hovered_handle not in (0, 1, 2):
+            return super().keyPressEvent(event)
+        step = 0.025 if not (event.modifiers() & QtCore.Qt.ShiftModifier) else 0.008
+        dx = -step if event.key() == QtCore.Qt.Key_Left else step if event.key() == QtCore.Qt.Key_Right else 0.0
+        dy = -step if event.key() == QtCore.Qt.Key_Up else step if event.key() == QtCore.Qt.Key_Down else 0.0
+        if not dx and not dy:
+            return super().keyPressEvent(event)
+        if self._hovered_handle < 2:
+            handle = self._handles[self._hovered_handle]
+            lower, upper = ((0.12, 0.48) if self._hovered_handle == 0 else (0.52, 0.88))
+            handle[0] = max(lower, min(upper, handle[0] + dx))
+            handle[1] = max(-0.72, min(0.72, handle[1] + dy))
+        else:
+            for handle in self._handles:
+                handle[1] = max(-0.72, min(0.72, handle[1] + dy))
+        self._emit_intent()
+
+    def paintEvent(self, _event):
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        rect = QtCore.QRectF(1, 1, self.width() - 2, self.height() - 2)
+        background = QtGui.QLinearGradient(rect.topLeft(), rect.bottomRight())
+        background.setColorAt(0.0, QtGui.QColor("#171713"))
+        background.setColorAt(0.52, QtGui.QColor("#101311"))
+        background.setColorAt(1.0, QtGui.QColor("#19110F"))
+        painter.setBrush(background)
+        painter.setPen(QtGui.QPen(QtGui.QColor("#554A3B"), 1))
+        painter.drawRoundedRect(rect, 6, 6)
+        field = self._field_rect()
+        painter.setPen(QtGui.QPen(QtGui.QColor(205, 185, 145, 24), 1, QtCore.Qt.DotLine))
+        for index in range(1, 6):
+            y = field.top() + field.height() * index / 6.0
+            painter.drawLine(QtCore.QPointF(field.left(), y), QtCore.QPointF(field.right(), y))
+        arc = self.arc()
+        views = [self._model_to_view(sample.position, field) for sample in arc.samples]
+        upper, lower = [], []
+        base_width = 9.0 + 5.0 * arc.samples[0].volume_scale
+        for index, point in enumerate(views):
+            before = views[max(0, index - 1)]
+            after = views[min(len(views) - 1, index + 1)]
+            delta = after - before
+            length = math.hypot(delta.x(), delta.y()) or 1.0
+            normal = QtCore.QPointF(-delta.y() / length, delta.x() / length)
+            belly = math.sin(arc.samples[index].arc_fraction * math.pi)
+            width = base_width * (0.72 + belly * 0.38)
+            upper.append(point + normal * width)
+            lower.append(point - normal * width)
+        ribbon = QtGui.QPainterPath(upper[0])
+        for point in upper[1:]:
+            ribbon.lineTo(point)
+        for point in reversed(lower):
+            ribbon.lineTo(point)
+        ribbon.closeSubpath()
+        fill = QtGui.QLinearGradient(field.left(), field.top(), field.right(), field.bottom())
+        fill.setColorAt(0.0, QtGui.QColor("#E7D7AE"))
+        fill.setColorAt(0.52, QtGui.QColor("#E9825C"))
+        fill.setColorAt(1.0, QtGui.QColor("#9E3F32"))
+        painter.setBrush(fill)
+        painter.setPen(QtGui.QPen(QtGui.QColor("#F5E6C2"), 1.4))
+        painter.drawPath(ribbon)
+        center = QtGui.QPainterPath(views[0])
+        for point in views[1:]:
+            center.lineTo(point)
+        dash_offset = int(self._phase * 18)
+        pen = QtGui.QPen(QtGui.QColor("#301814"), 1.2, QtCore.Qt.DashLine)
+        pen.setDashOffset(dash_offset)
+        painter.setPen(pen)
+        painter.drawPath(center)
+        for index, point in enumerate(views):
+            if index in (0, len(views) - 1):
+                painter.setBrush(QtGui.QColor("#F3E6C8"))
+                painter.setPen(QtGui.QPen(QtGui.QColor("#6B5841"), 2))
+                painter.drawRect(QtCore.QRectF(point.x() - 5, point.y() - 9, 10, 18))
+            elif index % 2 == 0:
+                painter.setBrush(QtGui.QColor("#251612"))
+                painter.setPen(QtGui.QPen(QtGui.QColor("#F2B071"), 1.4))
+                painter.drawEllipse(point, 4.2, 4.2)
+        self._update_handle_points(field)
+        start, end, belly = self._handle_points
+        painter.setPen(QtGui.QPen(QtGui.QColor(240, 177, 113, 120), 1, QtCore.Qt.DashLine))
+        painter.drawLine(views[0], start)
+        painter.drawLine(views[-1], end)
+        for index, point in enumerate(self._handle_points):
+            active = index in {self._hovered_handle, self._active_handle}
+            radius = 9.0 if index == 2 else 7.0
+            painter.setBrush(QtGui.QColor("#FFF0D0" if active else "#F2B071"))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#5B281E"), 2))
+            painter.drawEllipse(point, radius, radius)
+            if index == 2:
+                painter.setPen(QtGui.QColor("#4A211A"))
+                painter.setFont(QtGui.QFont(UI_FONT_FAMILY, 7, QtGui.QFont.Bold))
+                painter.drawText(QtCore.QRectF(point.x() - 20, point.y() - 7, 40, 14), QtCore.Qt.AlignCenter, "肌腹")
+        compact = self.width() < 360
+        painter.setFont(QtGui.QFont(UI_FONT_FAMILY, 8 if not compact else 7, QtGui.QFont.Bold))
+        painter.setPen(QtGui.QColor("#F4E8CE"))
+        painter.drawText(
+            rect.adjusted(12, 9, -12, 0), QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft,
+            "拖动轮廓" if compact else "形变弧场 · 拖动轮廓",
+        )
+        painter.setFont(QtGui.QFont(UI_FONT_FAMILY, 7, QtGui.QFont.DemiBold))
+        painter.setPen(QtGui.QColor("#E6A46B"))
+        painter.drawText(
+            rect.adjusted(12, 10, -12, 0), QtCore.Qt.AlignTop | QtCore.Qt.AlignRight,
+            (f"{arc.arc_length:.2f} / {arc.samples[0].volume_scale:.0%}" if compact else
+             f"弧长 {arc.arc_length:.2f}  ·  截面 {arc.samples[0].volume_scale:.0%}"),
+        )
+
 
 
 class RigGraphCanvas(QtWidgets.QWidget):
@@ -374,6 +621,7 @@ class RigGraphWorkspace(QtWidgets.QWidget):
         self.switch_receipt = None
         self.switch_receipt_kind = ""
         self.twist_mode = False
+        self.bendy_mode = False
         self.pending_twist_plan = None
         self.twist_receipt = None
         self._build_ui()
@@ -396,15 +644,15 @@ class RigGraphWorkspace(QtWidgets.QWidget):
         self._inspector_layout = side
         side.setContentsMargins(18, 18, 18, 18)
         side.setSpacing(10)
-        eyebrow = QtWidgets.QLabel("绑定图 / 实时编译器")
-        eyebrow.setStyleSheet("color:#42E8FF;font-size:8px;font-weight:900;letter-spacing:2px;")
+        self.eyebrow = QtWidgets.QLabel("绑定图 / 实时编译器")
+        self.eyebrow.setStyleSheet("color:#42E8FF;font-size:8px;font-weight:900;letter-spacing:2px;")
         self.title = QtWidgets.QLabel("黄金双足模板")
         self.title.setStyleSheet("font-size:20px;font-weight:900;")
         self.title.setWordWrap(True)
         self.summary = QtWidgets.QLabel("声明式模块 · 真实矩阵行为 · 物理漂移检测")
         self.summary.setProperty("muted", True)
         self.summary.setWordWrap(True)
-        side.addWidget(eyebrow)
+        side.addWidget(self.eyebrow)
         side.addWidget(self.title)
         side.addWidget(self.summary)
         self.signal = QtWidgets.QLabel("骨架信号 / 尚未捕获")
@@ -484,6 +732,10 @@ class RigGraphWorkspace(QtWidgets.QWidget):
         self.twist_entry_button = QtWidgets.QPushButton("进入 Twist 能量塑形舱  ↗")
         self.twist_entry_button.setObjectName("TwistEntry")
         self.twist_entry_button.clicked.connect(self.show_twist_panel)
+        self.bendy_entry_button = QtWidgets.QPushButton("打开形变弧场  ↗")
+        self.bendy_entry_button.setObjectName("BendyEntry")
+        self.bendy_entry_button.clicked.connect(self.show_bendy_panel)
+        match_layout.addWidget(self.bendy_entry_button)
         match_layout.addWidget(self.twist_entry_button)
         self.match_panel.setStyleSheet(
             "QFrame#RigMatchCapsule{background:#0C1420;border:1px solid #35566A;border-radius:10px;}"
@@ -493,11 +745,67 @@ class RigGraphWorkspace(QtWidgets.QWidget):
             "QPushButton#RigMatchIKToFK:disabled{color:#79516A;background:#33192C;}"
             "QPushButton#RigMatchApply{color:#071008;background:#A7FF6A;border:0;font-weight:900;}"
             "QPushButton#RigMatchApply:disabled{color:#5D6B58;background:#233323;}"
+            "QPushButton#BendyEntry{color:#28130D;background:#E7AD73;border:1px solid #FFE1B4;font-weight:900;}"
             "QPushButton#TwistEntry{color:#F7E9FF;background:#3B2057;border:1px solid #9D6CFF;}"
             "QComboBox{min-height:30px;color:#DCE5FA;background:#111827;border:1px solid #354158;border-radius:7px;padding:0 8px;}"
         )
         self.match_panel.setVisible(False)
         side.addWidget(self.match_panel)
+
+        self.bendy_panel = QtWidgets.QFrame()
+        self.bendy_panel.setObjectName("BendyArcCapsule")
+        bendy_layout = QtWidgets.QVBoxLayout(self.bendy_panel)
+        bendy_layout.setContentsMargins(10, 10, 10, 10)
+        bendy_layout.setSpacing(7)
+        bendy_header = QtWidgets.QHBoxLayout()
+        self.bendy_back_button = QtWidgets.QPushButton("‹ 返回匹配")
+        self.bendy_back_button.setObjectName("BendyBack")
+        self.bendy_back_button.clicked.connect(self.hide_bendy_panel)
+        self.bendy_title = QtWidgets.QLabel("左臂 / 形变弧场")
+        self.bendy_title.setStyleSheet("color:#F4E8CE;font-size:10px;font-weight:900;")
+        bendy_header.addWidget(self.bendy_back_button)
+        bendy_header.addWidget(self.bendy_title, 1, QtCore.Qt.AlignRight)
+        bendy_layout.addLayout(bendy_header)
+        self.bendy_field = BendyArcField()
+        self.bendy_field.intentChanged.connect(self._bendy_intent_changed)
+        bendy_layout.addWidget(self.bendy_field, 1)
+        preset_row = QtWidgets.QHBoxLayout()
+        preset_row.setSpacing(5)
+        for label, preset in (("自然 C 弧", "C"), ("反向 S 弧", "S"), ("回到直线", "STRAIGHT")):
+            button = QtWidgets.QPushButton(label)
+            button.setProperty("bendyPreset", True)
+            button.clicked.connect(lambda _checked=False, value=preset: self.bendy_field.set_preset(value))
+            preset_row.addWidget(button)
+        bendy_layout.addLayout(preset_row)
+        self.bendy_volume_label = QtWidgets.QLabel("体积保持  65%")
+        self.bendy_volume_label.setStyleSheet("color:#EADCC0;font-size:8px;font-weight:700;")
+        bendy_layout.addWidget(self.bendy_volume_label)
+        self.bendy_volume_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self.bendy_volume_slider.setRange(0, 100)
+        self.bendy_volume_slider.setValue(65)
+        self.bendy_volume_slider.valueChanged.connect(self._bendy_volume_changed)
+        bendy_layout.addWidget(self.bendy_volume_slider)
+        self.bendy_status = QtWidgets.QLabel("拖动切线或肌腹；当前只计算轮廓，不修改 Maya 场景。")
+        self.bendy_status.setWordWrap(True)
+        self.bendy_status.setMinimumHeight(30)
+        self.bendy_status.setStyleSheet("color:#BFAF92;font-size:8px;")
+        bendy_layout.addWidget(self.bendy_status)
+        self.bendy_confirm_button = QtWidgets.QPushButton("确认零写入形变意图")
+        self.bendy_confirm_button.setObjectName("BendyConfirm")
+        self.bendy_confirm_button.clicked.connect(self.confirm_bendy_intent)
+        bendy_layout.addWidget(self.bendy_confirm_button)
+        self.bendy_panel.setStyleSheet(
+            "QFrame#BendyArcCapsule{background:#12120F;border:1px solid #6E5A3D;border-radius:6px;}"
+            "QPushButton#BendyBack{color:#D5C7AD;background:transparent;border:0;text-align:left;padding:0;}"
+            "QPushButton#BendyConfirm{color:#28130D;background:#F0B171;border:0;font-weight:900;}"
+            "QPushButton[bendyPreset=\"true\"]{color:#E8DBC1;background:#252119;border:1px solid #5A4C37;padding:5px;}"
+            "QPushButton[bendyPreset=\"true\"]:hover{color:#FFF2D5;background:#3A2D20;border-color:#D89A62;}"
+            "QSlider::groove:horizontal{height:5px;background:#332B20;border-radius:2px;}"
+            "QSlider::sub-page:horizontal{background:#E9825C;border-radius:2px;}"
+            "QSlider::handle:horizontal{width:14px;margin:-5px 0;background:#F5E6C2;border:2px solid #6A3426;border-radius:7px;}"
+        )
+        self.bendy_panel.setVisible(False)
+        side.addWidget(self.bendy_panel)
 
         self.twist_panel = QtWidgets.QFrame()
         self.twist_panel.setObjectName("TwistSculptCapsule")
@@ -581,8 +889,9 @@ class RigGraphWorkspace(QtWidgets.QWidget):
 
     def resizeEvent(self, event):
         compact = self.height() < 580
-        self.summary.setVisible(not compact and not self.twist_mode)
-        self.detail.setVisible(not compact and not self.twist_mode)
+        sculpting = self.twist_mode or self.bendy_mode
+        self.summary.setVisible(not compact and not sculpting)
+        self.detail.setVisible(not compact and not sculpting)
         self.diff.setMinimumHeight(76 if compact else 104)
         self.diff.setMaximumHeight(82 if compact else 16777215)
         margin = 12 if compact else 18
@@ -708,8 +1017,9 @@ class RigGraphWorkspace(QtWidgets.QWidget):
         if ready and not self.active_limb:
             self.active_limb = "l_arm"
         visible = ready and self.active_limb in {"l_arm", "r_arm", "l_leg", "r_leg"}
-        self.match_panel.setVisible(visible and not self.twist_mode)
+        self.match_panel.setVisible(visible and not self.twist_mode and not self.bendy_mode)
         self.twist_panel.setVisible(visible and self.twist_mode)
+        self.bendy_panel.setVisible(visible and self.bendy_mode)
         self.preview_button.setVisible(not ready)
         self.apply_button.setVisible(not ready)
         if not visible:
@@ -726,6 +1036,8 @@ class RigGraphWorkspace(QtWidgets.QWidget):
         self.space_combo.blockSignals(False)
         if self.twist_mode:
             self._refresh_twist_panel()
+        elif self.bendy_mode:
+            self._refresh_bendy_panel()
 
     def _show_switch_plan(self, plan, kind):
         self.pending_switch_plan = plan
@@ -824,6 +1136,10 @@ class RigGraphWorkspace(QtWidgets.QWidget):
 
     def show_twist_panel(self):
         self.twist_mode = True
+        self.bendy_mode = False
+        self.eyebrow.setText("四元数塑形 / 实时扭转")
+        self.eyebrow.setStyleSheet("color:#B46BFF;font-size:8px;font-weight:900;letter-spacing:2px;")
+        self.title.setText("Twist 能量场")
         self.pending_twist_plan = None
         for widget in (
             self.summary, self.signal, self.capture_button, self.diff,
@@ -831,12 +1147,16 @@ class RigGraphWorkspace(QtWidgets.QWidget):
         ):
             widget.setVisible(False)
         self.match_panel.setVisible(False)
+        self.bendy_panel.setVisible(False)
         self.twist_panel.setVisible(True)
         self._refresh_twist_panel()
         self.statusChanged.emit("已进入 quaternion Twist 能量塑形舱")
 
     def hide_twist_panel(self):
         self.twist_mode = False
+        self.eyebrow.setText("绑定图 / 实时编译器")
+        self.eyebrow.setStyleSheet("color:#42E8FF;font-size:8px;font-weight:900;letter-spacing:2px;")
+        self.title.setText("黄金双足模板")
         self.pending_twist_plan = None
         self.twist_panel.setVisible(False)
         compact = self.height() < 580
@@ -847,6 +1167,69 @@ class RigGraphWorkspace(QtWidgets.QWidget):
         self.diff.setVisible(True)
         self.undo_button.setVisible(True)
         self._refresh_match_panel()
+
+    def show_bendy_panel(self):
+        self.bendy_mode = True
+        self.twist_mode = False
+        self.eyebrow.setText("形变设计 / 轮廓草绘")
+        self.eyebrow.setStyleSheet("color:#E7AD73;font-size:8px;font-weight:900;letter-spacing:2px;")
+        self.title.setText("形变设计台")
+        for widget in (
+            self.summary, self.signal, self.capture_button, self.diff,
+            self.preview_button, self.apply_button, self.undo_button, self.detail,
+        ):
+            widget.setVisible(False)
+        self.match_panel.setVisible(False)
+        self.twist_panel.setVisible(False)
+        self.bendy_panel.setVisible(True)
+        self._refresh_bendy_panel()
+        self.statusChanged.emit("已进入 Bendy 形变弧场，拖动仅更新零写入轮廓")
+
+    def hide_bendy_panel(self):
+        self.bendy_mode = False
+        self.eyebrow.setText("绑定图 / 实时编译器")
+        self.eyebrow.setStyleSheet("color:#42E8FF;font-size:8px;font-weight:900;letter-spacing:2px;")
+        self.title.setText("黄金双足模板")
+        self.bendy_panel.setVisible(False)
+        compact = self.height() < 580
+        self.summary.setVisible(not compact)
+        self.detail.setVisible(not compact)
+        self.signal.setVisible(True)
+        self.capture_button.setVisible(True)
+        self.diff.setVisible(True)
+        self.undo_button.setVisible(True)
+        self._refresh_match_panel()
+
+    def _refresh_bendy_panel(self):
+        if not self.active_limb:
+            return
+        self.bendy_title.setText(f"{MODULE_LABELS.get(self.active_limb, self.active_limb)} / 形变弧场")
+        arc = self.bendy_field.arc()
+        self.bendy_volume_label.setText(f"体积保持  {self.bendy_volume_slider.value()}%")
+        self.bendy_status.setStyleSheet("color:#BFAF92;font-size:8px;")
+        self.bendy_status.setText(
+            f"零写入轮廓 / {len(arc.samples)} 个等弧长采样点\n"
+            f"弧长 {arc.arc_length:.2f} · 伸长 {arc.stretch_ratio:.3f}× · 截面 {arc.samples[0].volume_scale:.1%}"
+        )
+
+    def _bendy_intent_changed(self, *_values):
+        if not self.bendy_mode:
+            return
+        self._refresh_bendy_panel()
+        self.bendy_status.setText(self.bendy_status.text() + "\n轮廓已改变，Maya 场景保持不变。")
+
+    def _bendy_volume_changed(self, value):
+        self.bendy_volume_label.setText(f"体积保持  {value}%")
+        self.bendy_field.set_volume_preservation(value / 100.0)
+
+    def confirm_bendy_intent(self):
+        arc = self.bendy_field.arc()
+        self.bendy_status.setStyleSheet("color:#F0B171;font-size:8px;font-weight:800;")
+        self.bendy_status.setText(
+            f"形变意图已冻结 / {len(arc.samples)} 个等弧长采样点\n"
+            "本切片没有写入 Maya；下一事务片将据此生成曲线、关节和矩阵行为。"
+        )
+        self.statusChanged.emit("Bendy 零写入形变意图已确认")
 
     def _twist_parameters(self):
         return (
@@ -966,4 +1349,7 @@ class RigGraphWorkspace(QtWidgets.QWidget):
         self._refresh_twist_panel()
 
 
-__all__ = ["RigGraphCanvas", "RigGraphWorkspace", "RigMatchGauge", "TwistEnergyField"]
+__all__ = [
+    "BendyArcField", "RigGraphCanvas", "RigGraphWorkspace",
+    "RigMatchGauge", "TwistEnergyField",
+]
