@@ -1,12 +1,12 @@
 # Bendy「形变弧场」Hero 简报
 
-状态：开发契约 0.1  
+状态：MayaCraft 2.3 展示版已完成并通过发布验收
 目标宿主：Maya 2025
 
 ![形变弧场交互预览](images/bendy_arc_field_preview.png)
 
-上图由 Maya 2025 自带 mayapy / PySide6 直接渲染生产 `BendyArcField`，展示当前零写入交互切片；
-不是最终 Maya DG 应用完成态。
+上图由 Maya 2025 自带 mayapy / PySide6 直接渲染生产 `BendyArcField`。真实应用、阻断和撤销状态见
+`bendy_verified.png`、`bendy_blocked.png` 与 `bendy_undo.png`。
 
 ## 一句话演示
 
@@ -36,7 +36,7 @@
 - 宿主无关层以三次 Hermite / Bézier 弧表示骨段，使用弧长参数化而不是直接按曲线参数均分关节；
 - Parallel Transport Frame 沿曲线传递局部朝向，避免 Frenet frame 在低曲率和拐点处翻转；
 - 弧长变化驱动体积保持，默认采用可调幂律缩放，并设置艺术家可理解的安全范围；
-- Maya 层优先使用原生曲线、pointOnCurveInfo、矩阵与 quaternion 节点；不依赖每帧 Python 回调；
+- Maya 层使用原生 NURBS、fraction motionPath、curveInfo、distanceBetween、multiplyDivide、矩阵与 quaternion 节点；不依赖每帧 Python 回调；
 - Twist 与 Bendy 分工：曲线切线决定主轴，现有 swing–twist 结果决定绕主轴旋转，组合顺序必须有可重复测试。
 
 ## 视觉路由
@@ -50,6 +50,11 @@
 标志结构：一条占据主要面积的可操作形变带，端点像装订铰链，弧心像可抓取的肌肉腹  
 反参考：节点监控大屏、AI 对话框、数据治理台、紫蓝霓虹卡片阵列
 
-## 首个切片
+## 当前实现
 
-宿主无关的弧长采样、稳定局部帧、体积曲线和 QPainter 可交互形变带已经完成。直线、C 弧、S 弧和接近零曲率均不翻转；两个切线把手与肌腹把手可直接拖动，目标 Dock 与 330px 窄场均已通过 mayapy 渲染复核。下一切片接 Rig Graph 声明与 Maya 事务。
+宿主无关算法、QPainter 形变带、`bendy_curve` 行为、Maya DG 与预览/应用/验证/Undo 事务已经完成。
+当前黄金双足包含 137 个声明对象、50 条物理行为；共享 Rig Graph、Quaternion Twist 和原生 UI 回归通过。
+`mayacraft_bendy_sculpt.ma` 已提供可重复的第 12 帧 Twist + Bendy 组合场景；教程、录屏路径和五种
+真实中文状态截图已落盘。75 项离线测试和 Bendy/旧 Rig Graph/Twist mayapy 组合回归通过；隐藏
+Maya 2025 以 `2.3.0 / PySide6` 完成启动、重复启动清理、热重载和关闭清理，`.mod` 安装文件也已
+写入并读回验证。测试进程退出后没有遗留 Maya 进程。

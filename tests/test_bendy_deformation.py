@@ -1,7 +1,9 @@
 import math
 import unittest
 
-from MayaCraft.domain.bendy_deformation import sample_bendy_arc
+from MayaCraft.domain.bendy_deformation import (
+    bendy_sculpt_fingerprint, map_bendy_intent, sample_bendy_arc,
+)
 
 
 def dot(left, right):
@@ -48,6 +50,33 @@ class BendyDeformationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "体积保持"):
             sample_bendy_arc(((0, 0, 0), (1, 0, 0), (2, 0, 0), (3, 0, 0)),
                              volume_preservation=2.0)
+
+    def test_normalized_intent_maps_into_stable_world_plane(self):
+        controls = map_bendy_intent(
+            (2, 3, 4), (12, 3, 4), ((3.0, 2.0, 0.0), (7.0, -1.0, 0.0)),
+            up_hint=(0, 1, 0),
+        )
+        self.assertEqual(controls, ((5.0, 5.0, 4.0), (9.0, 2.0, 4.0)))
+        vertical = map_bendy_intent(
+            (0, 0, 0), (0, 10, 0), ((3.0, 2.0, 0.0), (7.0, -1.0, 0.0)),
+            up_hint=(0, 1, 0),
+        )
+        self.assertTrue(all(math.isfinite(value) for point in vertical for value in point))
+        self.assertNotEqual(vertical[0][0], 0.0)
+
+    def test_sculpt_fingerprint_tracks_frame_controls_and_volume(self):
+        source = ((0, 0, 0), (10, 0, 0))
+        controls = ((3, 2, 0), (7, 2, 0))
+        value = bendy_sculpt_fingerprint("l_arm.bendy.0", 12.0, source, controls, 0.65)
+        self.assertEqual(value, bendy_sculpt_fingerprint(
+            "l_arm.bendy.0", 12.0, source, controls, 0.65,
+        ))
+        self.assertNotEqual(value, bendy_sculpt_fingerprint(
+            "l_arm.bendy.0", 13.0, source, controls, 0.65,
+        ))
+        self.assertNotEqual(value, bendy_sculpt_fingerprint(
+            "l_arm.bendy.0", 12.0, source, controls, 0.9,
+        ))
 
 
 if __name__ == "__main__":

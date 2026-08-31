@@ -360,13 +360,23 @@ class PackageTests(unittest.TestCase):
         self.assertLess(order.index("root"), order.index("spine"))
         self.assertLess(order.index("spine"), order.index("l_arm"))
         self.assertEqual(len(graph.modules), 7)
-        self.assertEqual(len(graph.nodes), 97)
-        self.assertEqual(len(graph.behaviors), 42)
+        self.assertEqual(len(graph.nodes), 137)
+        self.assertEqual(len(graph.behaviors), 50)
         behavior_types = {item.behavior_type for item in graph.behaviors}
         self.assertEqual(
             behavior_types,
-            {"matrix_drive", "matrix_blend", "rp_ik", "space_switch", "twist_distribution"},
+            {"bendy_curve", "matrix_drive", "matrix_blend", "rp_ik", "space_switch", "twist_distribution"},
         )
+        bendy = next(item for item in graph.behaviors if item.stable_id == "l_arm.bendy.0")
+        self.assertEqual(bendy.sources, (
+            "l_arm.deform.0", "l_arm.bendy.0.in",
+            "l_arm.bendy.0.out", "l_arm.deform.1",
+        ))
+        self.assertEqual(bendy.targets, (
+            "l_arm.bendy.0.0", "l_arm.bendy.0.1", "l_arm.bendy.0.2",
+        ))
+        twist = next(item for item in graph.nodes if item.stable_id == "l_arm.twist.0.1")
+        self.assertEqual(twist.parent_id, "l_arm.bendy.0.1")
 
     def test_rig_graph_empty_scene_compiles_to_deterministic_creates(self) -> None:
         graph = golden_biped_graph()

@@ -49,8 +49,8 @@ try:
     app.processEvents()
     assert workspace.skeleton.is_usable
     assert workspace.plan.can_apply
-    assert "97 个对象" in workspace.diff.text(), workspace.diff.text()
-    assert "42 条物理行为" in workspace.diff.text(), workspace.diff.text()
+    assert "137 个对象" in workspace.diff.text(), workspace.diff.text()
+    assert "50 条物理行为" in workspace.diff.text(), workspace.diff.text()
     # A real OS cursor is unavailable in background mayapy. Exercise the same
     # Qt signal path deterministically instead of depending on desktop focus.
     workspace.canvas.moduleHovered.emit("root")
@@ -59,13 +59,14 @@ try:
 
     artifacts = pathlib.Path(__file__).with_name("artifacts")
     artifacts.mkdir(exist_ok=True)
+    docs_images = pathlib.Path(__file__).parents[1] / "docs" / "images"
     preview = artifacts / "mayacraft_rig_graph_preview.png"
     assert window.grab().save(str(preview))
     workspace.apply_plan()
     app.processEvents()
     assert workspace.plan.is_noop
     assert workspace.receipt and workspace.receipt.verified
-    assert len(workspace.service.scan_behaviors(workspace.graph.graph_id)) == 42
+    assert len(workspace.service.scan_behaviors(workspace.graph.graph_id)) == 50
     hand_control = "|MC_RIG|MC_CONTROLS|L_arm_MOD|L_upperArm_FK_CTRL|L_forearm_FK_CTRL|L_hand_FK_CTRL"
     result_hand = "|MC_RIG|MC_DELIVERY|L_upperArm_RESULT_JNT|L_forearm_RESULT_JNT|L_hand_RESULT_JNT"
     ik_control = "|MC_RIG|MC_CONTROLS|L_arm_MOD|L_arm_IK_SPACE|L_hand_IK_CTRL"
@@ -93,6 +94,54 @@ try:
     pole_position = cmds.xform(pole, query=True, worldSpace=True, translation=True)
     assert abs(pole_position[2]) > 1.0, pole_position
     cmds.undo()
+
+    # Bendy Hero: direct silhouette -> zero-write plan -> DG apply/readback -> Undo -> blocker.
+    workspace.show_bendy_panel()
+    workspace.bendy_field.set_preset("S")
+    workspace.bendy_volume_slider.setValue(82)
+    workspace.confirm_bendy_intent()
+    app.processEvents()
+    assert workspace.pending_bendy_plan and workspace.pending_bendy_plan.can_apply
+    assert "零写入计划" in workspace.bendy_status.text()
+    bendy_preview = artifacts / "mayacraft_bendy_preview_cn.png"
+    assert window.grab().save(str(bendy_preview))
+    assert window.grab().save(str(docs_images / "bendy_preview.png"))
+    workspace.apply_bendy_intent()
+    app.processEvents()
+    assert workspace.bendy_receipt and workspace.bendy_receipt.verified
+    assert "验证" in workspace.bendy_status.text()
+    bendy_verified = artifacts / "mayacraft_bendy_verified_cn.png"
+    assert window.grab().save(str(bendy_verified))
+    assert window.grab().save(str(docs_images / "bendy_verified.png"))
+    window.resize(760, 620)
+    app.processEvents()
+    assert workspace.bendy_panel.isVisible()
+    assert workspace.bendy_panel.geometry().bottom() <= workspace.height()
+    bendy_narrow = artifacts / "mayacraft_bendy_narrow_cn.png"
+    assert window.grab().save(str(bendy_narrow))
+    assert window.grab().save(str(docs_images / "bendy_narrow.png"))
+    window.resize(1120, 760)
+    app.processEvents()
+    workspace.undo_bendy_intent()
+    app.processEvents()
+    assert workspace.bendy_receipt is None
+    assert "撤销验证通过" in workspace.bendy_status.text()
+    bendy_undo = artifacts / "mayacraft_bendy_undo_cn.png"
+    assert window.grab().save(str(bendy_undo))
+    assert window.grab().save(str(docs_images / "bendy_undo.png"))
+    bendy_in = workspace.service._paths_by_id(cmds, workspace.graph.graph_id)["l_arm.bendy.0.in"]
+    cmds.undoInfo(openChunk=True, chunkName="MayaCraft UI Bendy Locked Probe")
+    cmds.setAttr(f"{bendy_in}.translateY", lock=True)
+    workspace.confirm_bendy_intent()
+    app.processEvents()
+    assert not workspace.pending_bendy_plan.can_apply
+    assert "预检阻断" in workspace.bendy_status.text()
+    bendy_blocked = artifacts / "mayacraft_bendy_blocked_cn.png"
+    assert window.grab().save(str(bendy_blocked))
+    assert window.grab().save(str(docs_images / "bendy_blocked.png"))
+    cmds.undoInfo(closeChunk=True)
+    cmds.undo()
+    workspace.hide_bendy_panel()
 
     # Native animator workflow: zero-write preview -> keyed match -> verified UI -> Undo.
     workspace.preview_match("FK_TO_IK")
@@ -206,6 +255,7 @@ try:
         "MAYACRAFT_RIG_GRAPH_UI_OK", preview, verified, narrow,
         match_preview, match_verified, match_narrow, match_undo, match_blocked,
         twist_preview, twist_verified, twist_narrow, twist_undo, twist_blocked,
+        bendy_preview, bendy_verified, bendy_narrow, bendy_undo, bendy_blocked,
     )
     window.shutdown()
     window.close()

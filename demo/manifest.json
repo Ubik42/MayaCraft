@@ -27,6 +27,11 @@
       "purpose": "第 12 帧左前臂 90 度纯扭转，验证 swing–twist 分解、可调分布、实时关节和 Undo"
     },
     {
+      "file": "scenes/mayacraft_bendy_sculpt.ma",
+      "category": "Hero 成功 / 轮廓、体积与 Twist 组合",
+      "purpose": "第 12 帧左臂打开形变弧场，验证 S 弧零写入预览、真实 DG、三枚等弧长关节、体积保持和 Undo"
+    },
+    {
       "file": "scenes/mayacraft_skeleton_blocked.ma",
       "category": "边界 / 残缺输入",
       "purpose": "只有 root、pelvis、spine 的残缺骨架，验证语义扫描阻断"

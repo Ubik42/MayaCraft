@@ -490,6 +490,50 @@ class MayaRigGraphService:
                 999,
             ))
             return tuple(item for item in (start, end) if item), tuple(targets)
+        if behavior_type == "bendy_curve":
+            source_nodes = []
+            target_nodes = []
+            for aux in MayaRigGraphService._behavior_aux_nodes(cmds, behavior_id):
+                if cmds.nodeType(aux) == "multMatrix" and cmds.attributeQuery(
+                    "mayacraftBendySourceIndex", node=aux, exists=True,
+                ):
+                    stable_id = input_stable(f"{aux}.matrixIn[0]")
+                    if stable_id:
+                        source_nodes.append((int(cmds.getAttr(f"{aux}.mayacraftBendySourceIndex")), stable_id))
+                if cmds.nodeType(aux) == "motionPath" and cmds.attributeQuery(
+                    "mayacraftBendyTargetIndex", node=aux, exists=True,
+                ):
+                    positions = cmds.listConnections(
+                        f"{aux}.allCoordinates", source=False, destination=True, plugs=True,
+                    ) or []
+                    rotations = cmds.listConnections(
+                        f"{aux}.rotate", source=False, destination=True, plugs=True,
+                    ) or []
+                    position_ids = {stable_from_plug(plug) for plug in positions}
+                    rotation_ids = {stable_from_plug(plug) for plug in rotations}
+                    stable_ids = tuple(item for item in position_ids & rotation_ids if item)
+                    if len(stable_ids) != 1:
+                        continue
+                    target_path = next((
+                        plug.split(".", 1)[0] for plug in positions
+                        if stable_from_plug(plug) == stable_ids[0]
+                    ), "")
+                    scaled_axes = sum(
+                        any(MayaRigGraphService._get(cmds, item, BEHAVIOR_OWNER_ID, "") == behavior_id
+                            for item in (cmds.listConnections(
+                                f"{target_path}.scale{axis}", source=True, destination=False,
+                            ) or []))
+                        for axis in "XYZ"
+                    ) if target_path else 0
+                    scaled = scaled_axes >= 2
+                    if scaled:
+                        target_nodes.append((
+                            int(cmds.getAttr(f"{aux}.mayacraftBendyTargetIndex")), stable_ids[0],
+                        ))
+            return (
+                tuple(item[1] for item in sorted(source_nodes)),
+                tuple(item[1] for item in sorted(target_nodes)),
+            )
         return (), ()
 
     @staticmethod
@@ -507,6 +551,8 @@ class MayaRigGraphService:
             MayaRigGraphService._apply_space_switch(cmds, graph_id, behavior, paths)
         elif behavior.behavior_type == "twist_distribution":
             MayaRigGraphService._apply_twist_distribution(cmds, graph_id, behavior, paths)
+        elif behavior.behavior_type == "bendy_curve":
+            MayaRigGraphService._apply_bendy_curve(cmds, graph_id, behavior, paths)
         else:
             raise ValueError(f"尚未实现的绑定行为：{behavior.behavior_type}")
 
@@ -688,6 +734,97 @@ class MayaRigGraphService:
                 if cmds.getAttr(plug, lock=True) or not cmds.getAttr(plug, settable=True):
                     raise RuntimeError(f"Twist 关节旋转通道不可写：{plug}")
             cmds.connectAttr(f"{to_euler}.outputRotate", f"{target}.rotate", force=True)
+
+    @staticmethod
+    def _apply_bendy_curve(cmds, graph_id, behavior, paths):
+        sources = tuple(paths[item] for item in behavior.sources)
+        targets = tuple(paths[item] for item in behavior.targets)
+        settings = dict(behavior.settings)
+        fractions = tuple(float(value) for value in settings.get("fractions", "").split("|") if value)
+        if len(fractions) != len(targets) or any(not 0.0 < value < 1.0 for value in fractions):
+            raise ValueError(f"{behavior.stable_id} 的 Bendy 弧长分布无效")
+        volume_attribute = settings.get("volumeAttribute", "volume")
+        volume_control = sources[1]
+        if not cmds.attributeQuery(volume_attribute, node=volume_control, exists=True):
+            raise RuntimeError(f"Bendy 体积属性不存在：{volume_control}.{volume_attribute}")
+        axis = tuple(float(value) for value in settings.get("aimAxis", "1,0,0").split(","))
+        if len(axis) != 3 or sum(value * value for value in axis) <= 1e-10:
+            raise ValueError(f"{behavior.stable_id} 的 Bendy 主轴无效")
+        front_axis = max(range(3), key=lambda index: abs(axis[index]))
+        inverse_front = axis[front_axis] < 0.0
+        up_axis = 1 if front_axis != 1 else 2
+        cross_axes = tuple(index for index in range(3) if index != front_axis)
+        safe_name = behavior.stable_id.replace(".", "_").replace(":", "_")
+        world_positions = tuple(tuple(cmds.xform(
+            source, query=True, worldSpace=True, translation=True,
+        )) for source in sources)
+        curve = cmds.curve(
+            name=safe_name + "_CRV", degree=3, point=world_positions,
+        )
+        if paths.get("rig.deform"):
+            curve = cmds.parent(curve, paths["rig.deform"], absolute=True)[0]
+        curve = (cmds.ls(curve, long=True) or [curve])[0]
+        shape = (cmds.listRelatives(curve, shapes=True, fullPath=True) or [""])[0]
+        if not shape:
+            raise RuntimeError(f"{behavior.stable_id} 未能创建 Bendy 曲线形状")
+        MayaRigGraphService._tag_behavior_marker(cmds, curve, graph_id, behavior)
+        MayaRigGraphService._tag_behavior_aux(cmds, shape, behavior.stable_id)
+        cmds.setAttr(f"{shape}.overrideEnabled", True)
+        cmds.setAttr(f"{shape}.overrideColor", 21)
+        decomposes = []
+        for index, source in enumerate(sources):
+            local = cmds.createNode("multMatrix", name=f"{safe_name}_CV{index}_MMX")
+            decompose = cmds.createNode("decomposeMatrix", name=f"{safe_name}_CV{index}_DCM")
+            for aux in (local, decompose):
+                MayaRigGraphService._tag_behavior_aux(cmds, aux, behavior.stable_id)
+            cmds.addAttr(local, longName="mayacraftBendySourceIndex", attributeType="long", defaultValue=index)
+            cmds.connectAttr(f"{source}.worldMatrix[0]", f"{local}.matrixIn[0]", force=True)
+            cmds.connectAttr(f"{curve}.worldInverseMatrix[0]", f"{local}.matrixIn[1]", force=True)
+            cmds.connectAttr(f"{local}.matrixSum", f"{decompose}.inputMatrix", force=True)
+            cmds.connectAttr(f"{decompose}.outputTranslate", f"{shape}.controlPoints[{index}]", force=True)
+            decomposes.append(decompose)
+        curve_info = cmds.createNode("curveInfo", name=safe_name + "_ARC_CIF")
+        chord = cmds.createNode("distanceBetween", name=safe_name + "_CHORD_DST")
+        ratio = cmds.createNode("multiplyDivide", name=safe_name + "_STRETCH_DIV")
+        exponent = cmds.createNode("multiplyDivide", name=safe_name + "_VOLUME_EXP")
+        power = cmds.createNode("multiplyDivide", name=safe_name + "_VOLUME_POW")
+        for aux in (curve_info, chord, ratio, exponent, power):
+            MayaRigGraphService._tag_behavior_aux(cmds, aux, behavior.stable_id)
+        cmds.connectAttr(f"{shape}.worldSpace[0]", f"{curve_info}.inputCurve", force=True)
+        cmds.connectAttr(f"{decomposes[0]}.outputTranslate", f"{chord}.point1", force=True)
+        cmds.connectAttr(f"{decomposes[3]}.outputTranslate", f"{chord}.point2", force=True)
+        cmds.setAttr(f"{ratio}.operation", 2)
+        cmds.connectAttr(f"{curve_info}.arcLength", f"{ratio}.input1X", force=True)
+        cmds.connectAttr(f"{chord}.distance", f"{ratio}.input2X", force=True)
+        cmds.setAttr(f"{exponent}.operation", 1)
+        cmds.connectAttr(f"{volume_control}.{volume_attribute}", f"{exponent}.input1X", force=True)
+        cmds.setAttr(f"{exponent}.input2X", -0.5)
+        cmds.setAttr(f"{power}.operation", 3)
+        cmds.connectAttr(f"{ratio}.outputX", f"{power}.input1X", force=True)
+        cmds.connectAttr(f"{exponent}.outputX", f"{power}.input2X", force=True)
+        axis_names = "XYZ"
+        for index, (target, fraction) in enumerate(zip(targets, fractions)):
+            motion = cmds.createNode("motionPath", name=f"{safe_name}_{index + 1:02d}_MOP")
+            MayaRigGraphService._tag_behavior_aux(cmds, motion, behavior.stable_id)
+            cmds.addAttr(motion, longName="mayacraftBendyTargetIndex", attributeType="long", defaultValue=index)
+            cmds.addAttr(motion, longName="mayacraftBendyTarget", dataType="string")
+            cmds.setAttr(f"{motion}.mayacraftBendyTarget", behavior.targets[index], type="string")
+            cmds.setAttr(f"{motion}.fractionMode", True)
+            cmds.setAttr(f"{motion}.follow", True)
+            cmds.setAttr(f"{motion}.frontAxis", front_axis)
+            cmds.setAttr(f"{motion}.upAxis", up_axis)
+            cmds.setAttr(f"{motion}.inverseFront", inverse_front)
+            cmds.setAttr(f"{motion}.worldUpType", 3)
+            cmds.setAttr(f"{motion}.worldUpVector", 0.0, 1.0, 0.0, type="double3")
+            cmds.setAttr(f"{motion}.uValue", fraction)
+            MayaRigGraphService._reset_driven_transform(cmds, target)
+            cmds.connectAttr(f"{shape}.worldSpace[0]", f"{motion}.geometryPath", force=True)
+            cmds.connectAttr(f"{motion}.allCoordinates", f"{target}.translate", force=True)
+            cmds.connectAttr(f"{motion}.rotate", f"{target}.rotate", force=True)
+            for cross_axis in cross_axes:
+                cmds.connectAttr(
+                    f"{power}.outputX", f"{target}.scale{axis_names[cross_axis]}", force=True,
+                )
 
     @staticmethod
     def _tag_behavior_marker(cmds, node, graph_id, behavior):

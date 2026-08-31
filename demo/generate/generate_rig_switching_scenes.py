@@ -1,4 +1,4 @@
-"""Deterministically generate MayaCraft 2.2 demonstration scenes with Maya 2025."""
+"""Deterministically generate MayaCraft 2.3 demonstration scenes with Maya 2025."""
 
 from __future__ import annotations
 
@@ -131,6 +131,23 @@ def generate_twist(cmds):
     return _save(cmds, "mayacraft_twist_sculpt.ma")
 
 
+def generate_bendy(cmds):
+    cmds.file(new=True, force=True)
+    root = _source_biped(cmds)
+    _build_graph(cmds, "demoBendySculpt")
+    lower = "|MC_RIG|MC_CONTROLS|L_arm_MOD|L_upperArm_FK_CTRL|L_forearm_FK_CTRL"
+    for frame, twist in ((1, 0.0), (12, 75.0), (24, -40.0)):
+        cmds.setKeyframe(lower, attribute="rotateX", time=frame, value=twist)
+    cmds.playbackOptions(minTime=1, maxTime=24)
+    cmds.currentTime(12)
+    cmds.select("|MC_RIG|MC_CONTROLS|L_arm_MOD|L_upperArm_BENDY_IN_CTRL")
+    _tag(
+        cmds, root, "BENDY_ARC_SCULPT",
+        "第 12 帧打开左臂形变弧场；预览并应用 S 弧，三枚等弧长关节、幂律体积与 quaternion Twist 子层保持联动并可撤销",
+    )
+    return _save(cmds, "mayacraft_bendy_sculpt.ma")
+
+
 def generate_blocked_skeleton(cmds):
     cmds.file(new=True, force=True)
     root = _joint(cmds, "root_JNT", (0, 0, 0))
@@ -146,7 +163,8 @@ def main():
 
     OUTPUT.mkdir(parents=True, exist_ok=True)
     results = tuple(str(function(cmds)) for function in (
-        generate_success, generate_locked, generate_space, generate_twist, generate_blocked_skeleton,
+        generate_success, generate_locked, generate_space, generate_twist,
+        generate_bendy, generate_blocked_skeleton,
     ))
     print(json.dumps({"generated": results, "maya": cmds.about(version=True)}, ensure_ascii=False, indent=2))
 

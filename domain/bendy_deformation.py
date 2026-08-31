@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from dataclasses import field
+import hashlib
+import json
 import math
 from typing import Iterable, Sequence, Tuple
 
@@ -28,6 +31,51 @@ class BendyArc:
     arc_length: float
     stretch_ratio: float
     samples: Tuple[BendyArcSample, ...]
+
+
+@dataclass(frozen=True)
+class BendySculptIssue:
+    code: str
+    message: str
+    subject_id: str = ""
+
+
+@dataclass(frozen=True)
+class BendySculptPlan:
+    graph_id: str
+    behavior_id: str
+    frame: float
+    previous_controls: Tuple[Vector3, Vector3]
+    target_controls: Tuple[Vector3, Vector3]
+    previous_volume: float
+    target_volume: float
+    source_positions: Tuple[Vector3, Vector3]
+    observed_fingerprint: str
+    target_arc: BendyArc | None = None
+    blockers: Tuple[BendySculptIssue, ...] = field(default_factory=tuple)
+
+    @property
+    def can_apply(self) -> bool:
+        changed = self.previous_controls != self.target_controls or abs(
+            self.previous_volume - self.target_volume
+        ) > 1e-9
+        return changed and not self.blockers and self.target_arc is not None
+
+
+@dataclass(frozen=True)
+class BendySculptReceipt:
+    graph_id: str
+    behavior_id: str
+    frame: float
+    verified: bool
+    maximum_control_error: float
+    maximum_joint_error: float
+    previous_fingerprint: str
+    previous_controls: Tuple[Vector3, Vector3]
+    target_controls: Tuple[Vector3, Vector3]
+    previous_volume: float
+    target_volume: float
+    message: str
 
 
 def _vector(value: Iterable[float], label: str) -> Vector3:
@@ -200,5 +248,57 @@ def sample_bendy_arc(
     return BendyArc(points, chord, total, stretch_ratio, tuple(samples))
 
 
-__all__ = ["BendyArc", "BendyArcSample", "sample_bendy_arc"]
+def map_bendy_intent(
+    start: Iterable[float],
+    end: Iterable[float],
+    local_controls: Iterable[Iterable[float]],
+    up_hint: Iterable[float] = (0.0, 1.0, 0.0),
+) -> Tuple[Vector3, Vector3]:
+    """Map two normalized arc controls into a stable world-space bend plane."""
+    start_point, end_point = _vector(start, "骨段起点"), _vector(end, "骨段终点")
+    controls = tuple(_vector(item, "形变控制点") for item in local_controls)
+    if len(controls) != 2:
+        raise ValueError("形变意图必须包含两枚切线控制点")
+    delta = _subtract(end_point, start_point)
+    length = _length(delta)
+    if length <= 1e-8:
+        raise ValueError("Bendy 骨段起点与终点距离接近零")
+    tangent = _multiply(delta, 1.0 / length)
+    up = _vector(up_hint, "弯曲平面参考")
+    projected = _subtract(up, _multiply(tangent, _dot(up, tangent)))
+    normal = _fallback_normal(tangent) if _length(projected) <= 1e-8 else _normalize(projected, "弯曲平面参考")
+    result = []
+    for control in controls:
+        if not 0.0 <= control[0] <= 10.0:
+            raise ValueError("切线控制点必须位于骨段起止范围内")
+        result.append(_add(
+            _add(start_point, _multiply(tangent, control[0] / 10.0 * length)),
+            _multiply(normal, control[1] / 10.0 * length),
+        ))
+    return tuple(result)
 
+
+def bendy_sculpt_fingerprint(
+    behavior_id: str,
+    frame: float,
+    source_positions: Iterable[Iterable[float]],
+    controls: Iterable[Iterable[float]],
+    volume: float,
+) -> str:
+    payload = {
+        "behavior": str(behavior_id),
+        "frame": round(float(frame), 9),
+        "sources": [[round(float(value), 9) for value in item] for item in source_positions],
+        "controls": [[round(float(value), 9) for value in item] for item in controls],
+        "volume": round(float(volume), 9),
+    }
+    return hashlib.sha256(json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), allow_nan=False,
+    ).encode("utf-8")).hexdigest()
+
+
+__all__ = [
+    "BendyArc", "BendyArcSample", "BendySculptIssue", "BendySculptPlan",
+    "BendySculptReceipt", "bendy_sculpt_fingerprint", "map_bendy_intent",
+    "sample_bendy_arc",
+]

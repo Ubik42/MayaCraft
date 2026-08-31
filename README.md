@@ -1,6 +1,6 @@
 # MayaCraft
 
-> Maya 2025 中文原生绑定与动画 Hero 展示版 · `workspaceControl + PySide6 + QPainter`
+> Maya 2025 中文原生绑定与动画 Hero · `workspaceControl + PySide6 + QPainter`
 
 当前版本、稳定能力、legacy 边界与正在开发的 Bendy Hero 统一见
 [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md)。逐批开发记录只保留为历史证据，不作为当前状态入口。
@@ -17,8 +17,24 @@
 | ![形变 MRI](docs/images/deformation_mri.png) | ![重定向与接触 IK](docs/images/retarget_contact_ik.png) |
 
 展示范围：动态角色工作区、Deformation MRI、Motion Magnetism、Retarget/Clip/Contact IK，以及可增量
-构建的真实 FK/RP IK/Pole。MayaCraft 2.2 已完成时间感知的 FK/IK 无跳变匹配、带保护关键帧的
-Space Switch 和 quaternion Twist 能量塑形；Bendy/Guide、Face PSD/RBF 与拓扑变化蒙皮迁移仍明确列入后续。
+构建的真实 FK/RP IK/Pole。MayaCraft 2.3 在 FK/IK 无跳变匹配、Space Switch 和 quaternion
+Twist 基础上加入 Bendy「形变弧场」；Guide、Face PSD/RBF 与拓扑变化蒙皮迁移仍列入后续。
+
+## Hero 功能：Bendy 形变弧场
+
+绑定师可以直接拖动两枚切线把手或中间“肌腹”塑造 C/S 型肢体轮廓。QPainter 形变带实时显示弧长、
+伸长比、等弧长关节和体积截面；拖动阶段只计算预览，点击应用后才更新真实 Maya 曲线与控制器。
+
+| 零写入轮廓与真实写入计划 | Maya DG 应用与读回验证 |
+| --- | --- |
+| ![Bendy 零写入形变计划](docs/images/bendy_preview.png) | ![Bendy 应用验证](docs/images/bendy_verified.png) |
+| 760×620 窄 Dock | 锁定切线控制器的预检阻断 |
+| ![Bendy 窄尺寸](docs/images/bendy_narrow.png) | ![Bendy 写入阻断](docs/images/bendy_blocked.png) |
+
+每条骨段由两枚切线控制器、三枚 Bendy 关节和一条原生 NURBS 曲线组成。关节通过 fraction motion path
+按弧长跟随，`curveInfo.arcLength / distanceBetween` 计算伸长比，再用可调幂律驱动两个截面轴的体积
+保持。Twist 关节作为 Bendy 关节子层继续接收 swing–twist quaternion 分布，因此轮廓弯曲和绕轴扭转
+可以同时工作。整块撤销见 [`docs/images/bendy_undo.png`](docs/images/bendy_undo.png)。
 
 ## Hero 功能：Quaternion Twist 能量塑形
 
@@ -173,7 +189,7 @@ forward/up 坐标约定、metadata 与 SHA-256 指纹；写入采用原子替换
 
 新的 `G` 工作区是 Maya 2025 原生 Rig Graph 编译器：从所选 joint 只读分析骨架语义和左右对称，
 以动态模块图显示 typed sockets 与 CREATE/UPDATE/REPARENT/REBUILD/REMOVE 差异，再通过单一 Undo
-事务增量构建并全图读回验证。黄金双足目前覆盖 7 个模块、97 个声明对象和 42 条物理行为；脊柱、
+事务增量构建并全图读回验证。黄金双足目前覆盖 7 个模块、137 个声明对象和 50 条物理行为；脊柱、
 头部与四肢生成真实 NURBS 控制曲线、独立 FK/IK/result joint 链、RP IK + Pole、
 `blendMatrix` FK/IK 混合与 `multMatrix → offsetParentMatrix` 驱动；手脚 IK 控制器提供基础全局/胸腔
 Space Switch。新的动画匹配舱会在当前帧生成零写入计划：FK→IK 同时匹配末端、Pole、RP IK Roll
@@ -272,12 +288,13 @@ launch.run(development=True)
 
 ## 演示素材与最短成功路径
 
-仓库内置五套由 Maya 2025 确定性脚本自行合成的场景，不包含授权不明的第三方角色资产：
+仓库内置六套由 Maya 2025 确定性脚本自行合成的场景，不包含授权不明的第三方角色资产：
 
 - 标准弯曲手臂 FK→IK 成功场景；
 - IK 控制器通道锁定的预检阻断场景；
 - 胸腔带动画的关键帧 Space Switch 场景；
 - 左前臂 90° quaternion Twist 能量塑形场景；
+- 左臂 Bendy 形变弧场、体积保持与 Twist 子层组合场景；
 - 缺少胸腔、头部和四肢语义的残缺骨架场景。
 
 从 `demo/scenes/mayacraft_match_success.ma` 开始，在第 12 帧打开左侧“绑”工作区，点击
@@ -310,7 +327,7 @@ docs/DEVELOPMENT_PLAN.md  产品边界、研究议程与分阶段开发计划
 - 只支持 Maya 2025 / Python 3.11 / PySide6 6.5.3；
 - Rig Graph 已覆盖真实 FK、RP IK、Pole、FK/IK 混合、带关键帧的无跳变 FK/IK Match 和
   全局/胸腔 Space 补偿；当前只对 MayaCraft 黄金双足生成的三段肢体开放；
-- Bendy/Guide 高级编辑、Face PSD/RBF 重写、拓扑变化蒙皮迁移暂不进入本版；
+- Guide 高级编辑、Face PSD/RBF 重写、拓扑变化蒙皮迁移暂不进入本版；
 - Face 仍是历史 PyMEL 实现，已与主界面隔离，但完整去除 PyMEL 需要后续专项重写；
 - 自动绑定依赖骨骼命名、标签和场景结构，投入实际制作前应在副本场景验证；
 - 原 TD 页已迁出到独立 MayaScope 仓库，MayaCraft 不再新增通用 TD 功能；

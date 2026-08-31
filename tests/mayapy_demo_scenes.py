@@ -14,6 +14,7 @@ try:
 
     package = pathlib.Path(__file__).resolve().parents[1]
     sys.path.insert(0, str(package.parent))
+    from MayaCraft.adapters.maya.bendy_sculpt import MayaBendySculptService
     from MayaCraft.adapters.maya.rig_graph import MayaRigGraphService
     from MayaCraft.adapters.maya.rig_switching import MayaRigSwitchService
     from MayaCraft.adapters.maya.skeleton import MayaSkeletonScanner
@@ -59,6 +60,16 @@ try:
     assert twist_receipt.verified and twist_receipt.maximum_weight_error < 1e-8
     assert twist.undo_profile(graph, twist_receipt)
 
+    graph, _switch = load_graph("mayacraft_bendy_sculpt.ma", "demoBendySculpt")
+    bendy = MayaBendySculptService()
+    bendy_plan = bendy.plan_sculpt(
+        graph, "l_arm", 0, ((2.8, 2.2, 0.0), (7.2, -1.1, 0.0)), 0.82,
+    )
+    assert bendy_plan.can_apply, bendy_plan.blockers
+    bendy_receipt = bendy.apply_sculpt(graph, bendy_plan)
+    assert bendy_receipt.verified and bendy_receipt.maximum_joint_error < 2e-3
+    assert bendy.undo_sculpt(graph, bendy_receipt)
+
     cmds.file(str(package / "demo" / "scenes" / "mayacraft_skeleton_blocked.ma"), open=True, force=True)
     cmds.select("spine_JNT")
     incomplete = MayaSkeletonScanner().capture_selection()
@@ -70,6 +81,6 @@ try:
     else:
         raise AssertionError("残缺骨架不应进入黄金双足构建")
 
-    print("MAYACRAFT_DEMO_SCENES_OK", 5)
+    print("MAYACRAFT_DEMO_SCENES_OK", 6)
 finally:
     maya.standalone.uninitialize()

@@ -184,7 +184,10 @@ def validate_rig_graph(graph: RigGraphSpec) -> Tuple[RigGraphIssue, ...]:
     behavior_ids = [behavior.stable_id for behavior in graph.behaviors]
     if len(set(behavior_ids)) != len(behavior_ids):
         issues.append(RigGraphIssue("duplicate_behavior", "行为稳定 ID 必须唯一", graph.graph_id))
-    allowed_behaviors = {"matrix_drive", "matrix_blend", "rp_ik", "space_switch", "twist_distribution"}
+    allowed_behaviors = {
+        "bendy_curve", "matrix_drive", "matrix_blend", "rp_ik",
+        "space_switch", "twist_distribution",
+    }
     for module in graph.modules:
         for dependency in module.depends_on:
             if dependency not in modules:
@@ -216,6 +219,12 @@ def validate_rig_graph(graph: RigGraphSpec) -> Tuple[RigGraphIssue, ...]:
                 issues.append(RigGraphIssue("space_switch_arity", f"空间切换 {behavior.stable_id} 至少需要两个空间、一个选择器和一个目标", behavior.stable_id))
             if behavior.behavior_type == "twist_distribution" and (len(behavior.sources) != 2 or len(behavior.targets) < 1):
                 issues.append(RigGraphIssue("twist_distribution_arity", f"Twist 分配 {behavior.stable_id} 必须包含起止驱动和至少一个扭转关节", behavior.stable_id))
+            if behavior.behavior_type == "bendy_curve" and (len(behavior.sources) != 4 or len(behavior.targets) < 2):
+                issues.append(RigGraphIssue(
+                    "bendy_curve_arity",
+                    f"Bendy 弧线 {behavior.stable_id} 必须包含起点、两枚切线控制器、终点和至少两个形变关节",
+                    behavior.stable_id,
+                ))
     _order, cycle = _topological_order(graph.modules)
     if cycle:
         issues.append(RigGraphIssue("module_cycle", "模块依赖图存在循环", cycle))
@@ -514,6 +523,54 @@ def golden_biped_graph(graph_id="mayaCraftBiped") -> RigGraphSpec:
             (("selectorAttribute", "space"), ("spaceLabels", "全局|胸口")),
         ))
         for segment_index in range(2):
+            bendy_ids = []
+            start_role, end_role = roles[segment_index:segment_index + 2]
+            for handle_name, fraction in (("in", 0.33), ("out", 0.67)):
+                handle_id = f"{module_id}.bendy.{segment_index}.{handle_name}"
+                attributes = [
+                    ("controlShape", "circle"),
+                    ("bendyStartRole", start_role),
+                    ("bendyEndRole", end_role),
+                    ("bendyFraction", f"{fraction:.2f}"),
+                ]
+                if handle_name == "in":
+                    attributes.append(("customFloat:volume", "0.65|0|1"))
+                nodes.append(RigNodeSpec(
+                    handle_id,
+                    f"{side}_{parts[segment_index]}_BENDY_{handle_name.upper()}_CTRL",
+                    "transform", module_id, "control", f"{module_id}.module",
+                    tuple(attributes),
+                ))
+            for bendy_index, fraction in enumerate((0.25, 0.5, 0.75)):
+                bendy_id = f"{module_id}.bendy.{segment_index}.{bendy_index}"
+                bendy_ids.append(bendy_id)
+                nodes.append(RigNodeSpec(
+                    bendy_id,
+                    f"{side}_{parts[segment_index]}_BENDY_{bendy_index + 1:02d}_JNT",
+                    "joint", module_id, "deform", "rig.delivery",
+                    (
+                        ("bendyStartRole", start_role),
+                        ("bendyEndRole", end_role),
+                        ("bendyFraction", f"{fraction:.2f}"),
+                    ),
+                ))
+            behaviors.append(RigBehaviorSpec(
+                f"{module_id}.bendy.{segment_index}", "bendy_curve", module_id,
+                (
+                    f"{module_id}.deform.{segment_index}",
+                    f"{module_id}.bendy.{segment_index}.in",
+                    f"{module_id}.bendy.{segment_index}.out",
+                    f"{module_id}.deform.{segment_index + 1}",
+                ),
+                tuple(bendy_ids),
+                (
+                    ("aimAxis", "1,0,0"),
+                    ("fractions", "0.25|0.5|0.75"),
+                    ("startRole", start_role),
+                    ("endRole", end_role),
+                    ("volumeAttribute", "volume"),
+                ),
+            ))
             twist_ids = []
             for twist_index, fraction in enumerate((0.25, 0.5, 0.75)):
                 twist_id = f"{module_id}.twist.{segment_index}.{twist_index}"
@@ -521,7 +578,7 @@ def golden_biped_graph(graph_id="mayaCraftBiped") -> RigGraphSpec:
                 nodes.append(RigNodeSpec(
                     twist_id,
                     f"{side}_{parts[segment_index]}_TWIST_{twist_index + 1:02d}_JNT",
-                    "joint", module_id, "deform", f"{module_id}.deform.{segment_index}",
+                    "joint", module_id, "deform", bendy_ids[twist_index],
                     (
                         ("twistStartRole", roles[segment_index]),
                         ("twistEndRole", roles[segment_index + 1]),
@@ -638,15 +695,15 @@ def bind_graph_to_skeleton(graph: RigGraphSpec, analysis) -> RigGraphSpec:
                         "worldQuaternion": "0,0,0,1",
                     })
                     node = replace(node, attributes=tuple(sorted(declared.items())))
-            twist_start = declared.get("twistStartRole", "")
-            twist_end = declared.get("twistEndRole", "")
-            if twist_start and twist_end:
-                start_semantic = semantic_by_role.get(twist_start)
-                end_semantic = semantic_by_role.get(twist_end)
+            segment_start = declared.get("twistStartRole", "") or declared.get("bendyStartRole", "")
+            segment_end = declared.get("twistEndRole", "") or declared.get("bendyEndRole", "")
+            if segment_start and segment_end:
+                start_semantic = semantic_by_role.get(segment_start)
+                end_semantic = semantic_by_role.get(segment_end)
                 start_joint = observations.get(start_semantic.path) if start_semantic else None
                 end_joint = observations.get(end_semantic.path) if end_semantic else None
                 if start_joint and end_joint:
-                    fraction = float(declared.get("twistFraction", "0.5"))
+                    fraction = float(declared.get("twistFraction", declared.get("bendyFraction", "0.5")))
                     position = tuple(
                         start_joint.position[index] +
                         (end_joint.position[index] - start_joint.position[index]) * fraction
@@ -661,7 +718,7 @@ def bind_graph_to_skeleton(graph: RigGraphSpec, analysis) -> RigGraphSpec:
             nodes.append(node)
         behaviors = []
         for behavior in module.behaviors:
-            if behavior.behavior_type != "twist_distribution":
+            if behavior.behavior_type not in {"twist_distribution", "bendy_curve"}:
                 behaviors.append(behavior)
                 continue
             settings = dict(behavior.settings)
@@ -678,7 +735,7 @@ def bind_graph_to_skeleton(graph: RigGraphSpec, analysis) -> RigGraphSpec:
             local_axis = world_to_local_vector(world_delta, start_joint.orientation)
             axis_length = math.sqrt(sum(value * value for value in local_axis))
             if axis_length <= 1e-8:
-                raise ValueError(f"{behavior.stable_id} 的 Twist 骨段长度为零")
+                raise ValueError(f"{behavior.stable_id} 的形变骨段长度为零")
             settings["aimAxis"] = ",".join(
                 f"{value / axis_length:.9g}" for value in local_axis
             )

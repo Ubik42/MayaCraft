@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 
+from MayaCraft.adapters.maya.bendy_sculpt import MayaBendySculptService
 from MayaCraft.adapters.maya.rig_graph import MayaRigGraphService
 from MayaCraft.adapters.maya.rig_switching import MayaRigSwitchService
 from MayaCraft.adapters.maya.twist_sculpt import MayaTwistSculptService
@@ -610,6 +611,7 @@ class RigGraphWorkspace(QtWidgets.QWidget):
         self.graph = golden_biped_graph()
         self.scanner = MayaSkeletonScanner()
         self.service = MayaRigGraphService()
+        self.bendy_service = MayaBendySculptService(self.service)
         self.switch_service = MayaRigSwitchService(self.service)
         self.twist_service = MayaTwistSculptService(self.service)
         self.skeleton = None
@@ -622,6 +624,8 @@ class RigGraphWorkspace(QtWidgets.QWidget):
         self.switch_receipt_kind = ""
         self.twist_mode = False
         self.bendy_mode = False
+        self.pending_bendy_plan = None
+        self.bendy_receipt = None
         self.pending_twist_plan = None
         self.twist_receipt = None
         self._build_ui()
@@ -766,6 +770,10 @@ class RigGraphWorkspace(QtWidgets.QWidget):
         bendy_header.addWidget(self.bendy_back_button)
         bendy_header.addWidget(self.bendy_title, 1, QtCore.Qt.AlignRight)
         bendy_layout.addLayout(bendy_header)
+        self.bendy_segment_combo = QtWidgets.QComboBox()
+        self.bendy_segment_combo.addItems(("上段 · 肩/髋 → 肘/膝", "下段 · 肘/膝 → 腕/踝"))
+        self.bendy_segment_combo.currentIndexChanged.connect(self._bendy_segment_changed)
+        bendy_layout.addWidget(self.bendy_segment_combo)
         self.bendy_field = BendyArcField()
         self.bendy_field.intentChanged.connect(self._bendy_intent_changed)
         bendy_layout.addWidget(self.bendy_field, 1)
@@ -790,14 +798,28 @@ class RigGraphWorkspace(QtWidgets.QWidget):
         self.bendy_status.setMinimumHeight(30)
         self.bendy_status.setStyleSheet("color:#BFAF92;font-size:8px;")
         bendy_layout.addWidget(self.bendy_status)
-        self.bendy_confirm_button = QtWidgets.QPushButton("确认零写入形变意图")
+        bendy_actions = QtWidgets.QHBoxLayout()
+        self.bendy_confirm_button = QtWidgets.QPushButton("生成零写入计划")
         self.bendy_confirm_button.setObjectName("BendyConfirm")
         self.bendy_confirm_button.clicked.connect(self.confirm_bendy_intent)
-        bendy_layout.addWidget(self.bendy_confirm_button)
+        self.bendy_apply_button = QtWidgets.QPushButton("应用并验证")
+        self.bendy_apply_button.setObjectName("BendyApply")
+        self.bendy_apply_button.setEnabled(False)
+        self.bendy_apply_button.clicked.connect(self.apply_bendy_intent)
+        self.bendy_undo_button = QtWidgets.QPushButton("撤销")
+        self.bendy_undo_button.setEnabled(False)
+        self.bendy_undo_button.clicked.connect(self.undo_bendy_intent)
+        bendy_actions.addWidget(self.bendy_confirm_button)
+        bendy_actions.addWidget(self.bendy_apply_button, 1)
+        bendy_actions.addWidget(self.bendy_undo_button)
+        bendy_layout.addLayout(bendy_actions)
         self.bendy_panel.setStyleSheet(
             "QFrame#BendyArcCapsule{background:#12120F;border:1px solid #6E5A3D;border-radius:6px;}"
             "QPushButton#BendyBack{color:#D5C7AD;background:transparent;border:0;text-align:left;padding:0;}"
             "QPushButton#BendyConfirm{color:#28130D;background:#F0B171;border:0;font-weight:900;}"
+            "QPushButton#BendyApply{color:#F8EBCF;background:#7F3F2D;border:1px solid #E9825C;font-weight:900;}"
+            "QPushButton#BendyApply:disabled{color:#6E6254;background:#25211B;border-color:#4A4033;}"
+            "QComboBox{min-height:28px;color:#F0DEC1;background:#211B15;border:1px solid #5A4C37;border-radius:4px;padding:0 8px;}"
             "QPushButton[bendyPreset=\"true\"]{color:#E8DBC1;background:#252119;border:1px solid #5A4C37;padding:5px;}"
             "QPushButton[bendyPreset=\"true\"]:hover{color:#FFF2D5;background:#3A2D20;border-color:#D89A62;}"
             "QSlider::groove:horizontal{height:5px;background:#332B20;border-radius:2px;}"
@@ -897,6 +919,10 @@ class RigGraphWorkspace(QtWidgets.QWidget):
         margin = 12 if compact else 18
         self._inspector_layout.setContentsMargins(margin, margin, margin, margin)
         self._inspector_layout.setSpacing(6 if compact else 10)
+        narrow = self.width() < 850
+        self.bendy_confirm_button.setText("零写入预览" if narrow else "生成零写入计划")
+        if not self.bendy_receipt and self.bendy_apply_button.text() not in {"正在塑形…", "重新预览"}:
+            self.bendy_apply_button.setText("应用" if narrow else "应用并验证")
         super().resizeEvent(event)
 
     def capture_skeleton(self):
@@ -1171,6 +1197,7 @@ class RigGraphWorkspace(QtWidgets.QWidget):
     def show_bendy_panel(self):
         self.bendy_mode = True
         self.twist_mode = False
+        self.pending_bendy_plan = None
         self.eyebrow.setText("形变设计 / 轮廓草绘")
         self.eyebrow.setStyleSheet("color:#E7AD73;font-size:8px;font-weight:900;letter-spacing:2px;")
         self.title.setText("形变设计台")
@@ -1206,7 +1233,7 @@ class RigGraphWorkspace(QtWidgets.QWidget):
         self.bendy_title.setText(f"{MODULE_LABELS.get(self.active_limb, self.active_limb)} / 形变弧场")
         arc = self.bendy_field.arc()
         self.bendy_volume_label.setText(f"体积保持  {self.bendy_volume_slider.value()}%")
-        self.bendy_status.setStyleSheet("color:#BFAF92;font-size:8px;")
+        self.bendy_status.setStyleSheet("color:#BFAF92;font-size:9px;")
         self.bendy_status.setText(
             f"零写入轮廓 / {len(arc.samples)} 个等弧长采样点\n"
             f"弧长 {arc.arc_length:.2f} · 伸长 {arc.stretch_ratio:.3f}× · 截面 {arc.samples[0].volume_scale:.1%}"
@@ -1216,7 +1243,15 @@ class RigGraphWorkspace(QtWidgets.QWidget):
         if not self.bendy_mode:
             return
         self._refresh_bendy_panel()
+        self.pending_bendy_plan = None
+        self.bendy_apply_button.setEnabled(False)
         self.bendy_status.setText(self.bendy_status.text() + "\n轮廓已改变，Maya 场景保持不变。")
+
+    def _bendy_segment_changed(self, *_values):
+        self.pending_bendy_plan = None
+        self.bendy_apply_button.setEnabled(False)
+        if self.bendy_mode:
+            self._refresh_bendy_panel()
 
     def _bendy_volume_changed(self, value):
         self.bendy_volume_label.setText(f"体积保持  {value}%")
@@ -1224,12 +1259,69 @@ class RigGraphWorkspace(QtWidgets.QWidget):
 
     def confirm_bendy_intent(self):
         arc = self.bendy_field.arc()
-        self.bendy_status.setStyleSheet("color:#F0B171;font-size:8px;font-weight:800;")
-        self.bendy_status.setText(
-            f"形变意图已冻结 / {len(arc.samples)} 个等弧长采样点\n"
-            "本切片没有写入 Maya；下一事务片将据此生成曲线、关节和矩阵行为。"
+        controls = self.bendy_field.control_points()[1:3]
+        plan = self.bendy_service.plan_sculpt(
+            self.graph, self.active_limb,
+            self.bendy_segment_combo.currentIndex(), controls,
+            self.bendy_volume_slider.value() / 100.0,
         )
-        self.statusChanged.emit("Bendy 零写入形变意图已确认")
+        self.pending_bendy_plan = plan
+        self.bendy_apply_button.setEnabled(plan.can_apply)
+        if plan.blockers:
+            self.bendy_status.setStyleSheet("color:#FF765F;font-size:8px;font-weight:800;")
+            self.bendy_status.setText("预检阻断 / " + " · ".join(item.message for item in plan.blockers[:2]))
+        elif not plan.can_apply:
+            self.bendy_status.setStyleSheet("color:#D9BE86;font-size:8px;")
+            self.bendy_status.setText("当前形变已与目标一致，无需写入。")
+        else:
+            self.bendy_status.setStyleSheet("color:#F0B171;font-size:9px;font-weight:800;")
+            self.bendy_status.setText(
+                f"零写入计划 / {len(plan.target_arc.samples) - 2} 枚 Bendy 关节\n"
+                f"目标弧长 {plan.target_arc.arc_length:.3f} · 截面 {plan.target_arc.samples[0].volume_scale:.1%}"
+            )
+        self.statusChanged.emit("Bendy 零写入形变计划已生成")
+
+    def apply_bendy_intent(self):
+        if not self.pending_bendy_plan or not self.pending_bendy_plan.can_apply:
+            return
+        self.bendy_apply_button.setEnabled(False)
+        self.bendy_apply_button.setText("正在塑形…")
+        QtWidgets.QApplication.processEvents()
+        try:
+            self.bendy_receipt = self.bendy_service.apply_sculpt(
+                self.graph, self.pending_bendy_plan,
+            )
+        except Exception as exc:
+            self.bendy_status.setStyleSheet("color:#FF765F;font-size:8px;")
+            self.bendy_status.setText(f"事务已回滚 / {type(exc).__name__}: {exc}")
+            self.bendy_apply_button.setText("重新预览")
+            self.statusChanged.emit("Bendy 形变失败，场景已恢复")
+            return
+        self.pending_bendy_plan = None
+        self.bendy_apply_button.setText("验证通过")
+        self.bendy_undo_button.setEnabled(True)
+        self.bendy_status.setStyleSheet("color:#A7D89B;font-size:8px;font-weight:800;")
+        self.bendy_status.setText(self.bendy_receipt.message + "\n曲线、体积与 Twist 子层保持联动，可整块撤销。")
+        self.statusChanged.emit(self.bendy_receipt.message)
+
+    def undo_bendy_intent(self):
+        if not self.bendy_receipt:
+            return
+        try:
+            restored = self.bendy_service.undo_sculpt(self.graph, self.bendy_receipt)
+        except Exception as exc:
+            restored = False
+            self.bendy_status.setText(f"撤销验证失败 / {type(exc).__name__}: {exc}")
+        if not restored:
+            self.statusChanged.emit("Bendy 撤销未能验证，请检查 Maya Undo 队列")
+            return
+        self.bendy_receipt = None
+        self.bendy_undo_button.setEnabled(False)
+        self.bendy_apply_button.setText("应用并验证")
+        self.bendy_apply_button.setEnabled(False)
+        self.bendy_status.setStyleSheet("color:#A7D89B;font-size:8px;")
+        self.bendy_status.setText("撤销验证通过 / 切线控制器、体积与 Bendy 关节均已恢复。")
+        self.statusChanged.emit("Bendy 形变已撤销并验证")
 
     def _twist_parameters(self):
         return (

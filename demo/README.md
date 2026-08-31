@@ -18,7 +18,8 @@
 1. `mayacraft_match_success.ma`：第 12 帧预览并应用左臂 FK→IK，观察输出骨架和关键帧；随后撤销。
 2. `mayacraft_space_switch.ma`：第 12 帧把左手从全局切到胸腔，播放前后帧观察手腕无跳变和后续跟随。
 3. `mayacraft_match_locked.ma`：预览 FK→IK，展示锁定通道在写入前被阻断。
-4. `mayacraft_twist_sculpt.ma`：第 12 帧进入 Twist 塑形舱，展示 90° 纯扭转、偏置预览与整块撤销。
-5. `mayacraft_skeleton_blocked.ma`：扫描残缺骨架，展示缺少语义时不允许构建。
+4. `mayacraft_bendy_sculpt.ma`：第 12 帧进入形变弧场，把直线塑成 S 弧，展示真实关节、体积和 Twist 子层。
+5. `mayacraft_twist_sculpt.ma`：第 12 帧进入 Twist 塑形舱，展示 90° 纯扭转、偏置预览与整块撤销。
+6. `mayacraft_skeleton_blocked.ma`：扫描残缺骨架，展示缺少语义时不允许构建。
 
 详细用途、分类和来源见 `manifest.json`。
