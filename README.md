@@ -2,6 +2,9 @@
 
 > Maya 2025 中文原生绑定与动画 Hero 展示版 · `workspaceControl + PySide6 + QPainter`
 
+当前版本、稳定能力、legacy 边界与正在开发的 Bendy Hero 统一见
+[`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md)。逐批开发记录只保留为历史证据，不作为当前状态入口。
+
 ## 展示版速览
 
 这一版主动收口长线研发，目标是形成可以直接录屏、面试讲解和现场操作的完整演示，而不是继续堆放
@@ -50,7 +53,7 @@ skinCluster 等必要行业术语按语境保留。原生 Qt 启动时会显式�
 
 面向 Autodesk Maya 2025 的专业角色绑定与动画工具。MayaCraft 聚焦身体/面部绑定、蒙皮、动画制作、重定向和制作可视化，不再承载通用 TD 与节点诊断功能。当前展示版本只支持 Maya 2025、Python 3.11、PySide6 与 shiboken6，不维护多前端兼容矩阵。
 
-产品方向、算法候选和阶段门槛见 `docs/DEVELOPMENT_PLAN.md`。当前组合展示已完成 Living Rig Canvas 1.0 与 Deformation MRI v0：真实 DAG 交互、多角色 Session、Rig Module Spectrum、skinCluster 热力诊断和可撤销归一化修复。
+产品方向和历史开发记录见 `docs/DEVELOPMENT_PLAN.md`；当前状态以 `docs/PROJECT_STATUS.md` 为准。当前组合展示已完成 Living Rig Canvas 1.0 与 Deformation MRI v0：真实 DAG 交互、多角色 Session、Rig Module Spectrum、skinCluster 热力诊断和可撤销归一化修复。
 
 新的 Rig Graph 编译内核正在替换 legacy `RigBuilder`：版本化 Module/Socket/Node 声明、
 control/deform/delivery 分层、结构 diff、增量 Build、全图读回验证和整块 Undo 已接入 Maya 2025。

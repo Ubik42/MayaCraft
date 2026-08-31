@@ -1,7 +1,10 @@
-# MayaCraft Hero Prototype 完成审计
+# MayaCraft 2.2 Hero Prototype 发布审计
 
 审计日期：2026-08-25。发布范围按最新决策收敛为 Maya 2025 / PySide6 单版本展示。
 结论以当前工作树、Maya 2025 mayapy、隐藏 GUI 报告和实际截图为准。
+
+> 这是 2.2 发布节点的冻结证据，不是滚动状态页。最新进度见
+> [PROJECT_STATUS.md](PROJECT_STATUS.md)。
 
 | 要求 | 权威证据 | 结论 |
 | --- | --- | --- |
@@ -18,7 +21,7 @@
 | Rig Graph 物理行为 | 97 个声明对象、42 条行为；FK/RP IK/Pole/混合/Space/Twist 均为真实 DG，断线可检测/修复/撤销 | 通过 |
 | Quaternion Twist Hero | 任意局部轴 swing–twist 分解、每骨段三枚实时关节、偏置/缓入/强度预览、读回验证与 Undo | 通过 |
 | 动画师无跳变事务 | FK→IK / IK→FK、RP IK Roll 关键帧补偿、上一帧 Space 保护键、漂移检查、读回误差与 Undo | 通过 |
-| 可复现演示素材 | 4 个 Maya ASCII 自生成场景覆盖成功、锁定阻断、复杂 Space 动画和残缺骨架 | 通过 |
+| 可复现演示素材 | 5 个 Maya ASCII 自生成场景覆盖成功、锁定阻断、复杂 Space 动画、Quaternion Twist 和残缺骨架 | 通过 |
 
 ## 权威产物
 
